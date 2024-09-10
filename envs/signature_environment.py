@@ -10,17 +10,35 @@ class LinkBuilderEnv(gym.Env):
 
         self.braid_index = braid_index
         self.B = BraidGroup(self.braid_index)
-        self.max_braid_length = 56 # somewhat arbitrary, still computes signature for longer braids
+        self.max_braid_length = 70 # somewhat arbitrary, still computes signature for longer braids
 
         # randomly pick a target signature between -22 and 22 for each episode 
         # ideally there should be a "teacher" creating a "curriculum," carefully  
         # selecting which tasks to train on 
-        self.target_signature = np.random.randint(-22, 23)
+        self.target_signature_min = -22
+        self.target_signature_max = 22
+        self.target_signature = np.random.randint(self.target_signature_min, self.target_signature_max+1)
 
         # braid_index = 3 would give 5 actions: {sigma_1, sigma_2, sigma_{-1}, sigma_{-2}, STOP}
         self.action_space = spaces.Discrete((self.braid_index-1)*2 + 1) 
-        self.observation_space = spaces.Box(low=np.array([0]), high=np.array([100]), dtype=np.float32) 
-        #### ^^^^ fix 
+
+        # create the observation space
+        # signature will stay pretty small, but the LK rep can blow up for large braid words
+        self.lk_matrix_size = self.braid_index*(self.braid_index-1)//2 # code credit: Mark Hughes
+        
+        # Bounds for the first 2 dimensions representing target signature and current signature
+        low_signature = np.array([self.target_signature_min, -self.max_braid_length], dtype=np.float64)
+        high_signature = np.array([self.target_signature_max, self.max_braid_length], dtype=np.float64)
+
+        # Bounds for the remaining LK rep dimensions 
+        low_lk_rep = np.full(self.lk_matrix_size**2, -2e12, dtype=np.float64)
+        high_lk_rep = np.full(self.lk_matrix_size**2, 6e12, dtype=np.float64)
+
+        # Combine the low and high bounds for all dimensions
+        low = np.concatenate([low_signature, low_lk_rep])
+        high = np.concatenate([high_signature, high_lk_rep])
+        
+        observation_space = gym.spaces.Box(low=low, high=high, dtype=np.float64)
         
         # initialize the braid word with a random generator, could also experiment with starting with it empty
         self.braid_word = [np.random.choice([i for i in range(-self.braid_index+1, self.braid_index)  if i != 0])]
@@ -28,7 +46,6 @@ class LinkBuilderEnv(gym.Env):
 
         # compute the Lawrence-Krammer representation for each braid group generator
         # code courtesy of Mark Hughes
-        self.lk_matrix_size = self.braid_index*(self.braid_index-1)//2
         self.generator_lk_matrices = {}
         for sigma_i in range(-self.braid_index+1,self.braid_index):
             if np.sign(sigma_i) == -1:
@@ -67,7 +84,7 @@ class LinkBuilderEnv(gym.Env):
         pass
 
     # computes the Lawrence-Krammer representation of sigma_k (k > 0) with a braid index of n
-    # function courtesy of Mark Hughes
+    # lk_rep and index functions courtesy of Mark Hughes
     def lk_rep(self,n,k):
         M=np.zeros((n*(n-1)//2,n*(n-1)//2))
         q=np.sqrt(2)
@@ -94,6 +111,10 @@ class LinkBuilderEnv(gym.Env):
                     M[self.index(n,i,j),self.index(n,i,j)]=1-q
                     M[self.index(n,i,j+1),self.index(n,i,j)]=q
         return M
+
+    # used in the lk_rep function
+    def index(self,n,i,j):
+        return int((i-1)*(n-i/2)+j-i-1)
     
     def get_state() :
 
