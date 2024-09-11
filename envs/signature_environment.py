@@ -5,20 +5,24 @@ import numpy as np
 import torch
 
 class LinkBuilderEnv(gym.Env):
-    def __init__(self, braid_index: int = 7, state : str = 'Lawrence-Krammer', curiousity : bool = False):
+    def __init__(self, braid_index: int = 7, state: str = 'Lawrence-Krammer', reward_type: str = 'dense', 
+                 curiousity: bool = False):
         super(LinkBuilderEnv, self).__init__()
 
         if braid_index < 3 : 
             raise ValueError(f"Invalid param: {braid_index}. 'braid_index' parameter must be greater than 2")
 
-        if state not in ['Lawrence-Krammer', 'braid word', 'invariants'] :
-            raise ValueError(f"Invalid param: {state}. 'state' parameter must be one of 'Lawrence-Krammer', 'braid word', or 'invariants'.")
+        if state not in ['Lawrence-Krammer', 'invariants'] :
+            raise ValueError(f"Invalid param: {state}. 'state' parameter must be one of 'Lawrence-Krammer' or 'invariants'.")
+
+        if reward_type not in ['dense', 'sparse'] :
+            raise ValueError(f"Invalid param: {reward_type}. 'reward_type' parameter must be one of 'dense' or 'sparse'")
 
         self.braid_index = braid_index
         self.B = BraidGroup(self.braid_index)
         self.max_braid_length = 75 # somewhat arbitrary, still computes signature for longer braids
 
-        # randomly pick a target signature between -22 and 22 for each episode 
+        # randomly pick a target signature between -target signature min and max for each episode 
         # ideally there should be a "teacher" creating a "curriculum," carefully  
         # selecting which tasks to train on 
         self.target_signature_min = -np.round(self.max_braid_length/2.5)
@@ -29,26 +33,18 @@ class LinkBuilderEnv(gym.Env):
         self.action_space = spaces.Discrete((self.braid_index-1)*2 + 1) 
 
         # create the observation space
-        # signature will stay pretty small, but the LK rep can blow up for large braid words
-        self.lk_matrix_size = self.braid_index*(self.braid_index-1)//2 # code credit: Mark Hughes
-        
-        # Bounds for the first 2 dimensions representing target signature and current signature
-        low_signature = np.array([self.target_signature_min, -self.max_braid_length], dtype=np.float64)
-        high_signature = np.array([self.target_signature_max, self.max_braid_length], dtype=np.float64)
+        if state == 'Lawrence-Krammer' :
+            self.lk_matrix_size = self.braid_index*(self.braid_index-1)//2 # code credit: Mark Hughes
 
-        # Bounds for the remaining LK rep dimensions 
-        low_lk_rep = np.full(self.lk_matrix_size**2, -2e12, dtype=np.float64)
-        high_lk_rep = np.full(self.lk_matrix_size**2, 6e12, dtype=np.float64)
-
-        # Combine the low and high bounds for all dimensions
-        low = np.concatenate([low_signature, low_lk_rep])
-        high = np.concatenate([high_signature, high_lk_rep])
-        
-        observation_space = gym.spaces.Box(low=low, high=high, dtype=np.float64)
+            # the LK rep can blow up for large braid words 
+            observation_space = gym.spaces.Box(low=-2e13, high=6e13, 
+                                               shape=(self.lk_matrix_size, self.lk_matrix_size), 
+                                               dtype=np.float64)
         
         # initialize the braid word with a random generator, could also experiment with starting with it empty
         self.braid_word = [np.random.choice([i for i in range(-self.braid_index+1, self.braid_index)  if i != 0])]
         self.link = Link(self.B(self.braid_word))
+        self.current_signature = self.link.signature()
 
         # compute the Lawrence-Krammer representation for each braid group generator
         # code courtesy of Mark Hughes
@@ -60,27 +56,37 @@ class LinkBuilderEnv(gym.Env):
                 self.generator_lk_matrices[sigma_i]=self.lk_rep(self.braid_index,np.abs(sigma_i))
 
         self.braid_word_lk_rep = self.generator_lk_matrices[self.braid_word[0]]
-        self.state = self.get_state()
 
-    def reset(self):
+    def reset(self, target_signature: int):
         # initialize the braid word with a random generator, could also experiment with starting with it empty
         self.braid_word = [np.random.choice([i for i in range(-self.braid_index+1, self.braid_index)  if i != 0])]
         self.braid_word_lk_rep = self.generator_lk_matrices[self.braid_word[0]]
         self.link = Link(self.B(self.braid_word))
-        self.state = self.get_state()
+        self.current_signature = self.link.signature()
+        
+        self.target_signature = target_signature
 
         return np.array([self.state], dtype=np.float32)
 
     def step(self, action):
-        # Define how action affects state and how the reward is computed
-        if action == 0:
-            self.state -= 1
-        else:
-            self.state += 1
+        # if a generator was appended, i.e. if the STOP token wasn't selected
+        if action < (self.braid_index-1)*2 :
+            # I followed the convention used in https://arxiv.org/abs/1610.05744 for ordering the generators
+            # sigma_1, sigma_2, ..., sigma_n, sigma_{-1}, sigma_{-2}, ..., sigma_{-n}
+            generator = (action % (self.braid_index-1)) + 1
+            if action >= self.braid_index - 1 :
+                generator = -generator
+            self.braid_word.append(generator)
+            self.braid_word_lk_rep = self.braid_word_lk_rep @ self.generator_lk_matrices[generator]
+            terminated = False 
+            if len(self.braid_word) >= self.max_braid_length :
+                truncated = True
+            else :
+                truncated = False
+        else :
+            terminated = True
+            truncated = False
 
-        # Compute reward and whether the environment is done
-        reward = -abs(self.state - 50)  # Reward is based on proximity to the value 50
-        done = self.state < 0 or self.state > 100  # Done if state is out of bounds
         return np.array([self.state], dtype=np.float32), reward, done, {}
 
     def render(self, mode='human'):
@@ -121,6 +127,9 @@ class LinkBuilderEnv(gym.Env):
     # used in the lk_rep function
     def index(self,n,i,j):
         return int((i-1)*(n-i/2)+j-i-1)
-    
-    def get_state() :
 
+    def get_signatures() :
+        return np.array([self.current_signature, self.target_signature])
+
+    def get_braid_word() :
+        return self.braid_word
