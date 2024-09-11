@@ -5,18 +5,24 @@ import numpy as np
 import torch
 
 class LinkBuilderEnv(gym.Env):
-    def __init__(self, braid_index=7):
+    def __init__(self, braid_index: int = 7, state : str = 'Lawrence-Krammer', curiousity : bool = False):
         super(LinkBuilderEnv, self).__init__()
+
+        if braid_index < 3 : 
+            raise ValueError(f"Invalid param: {braid_index}. 'braid_index' parameter must be greater than 2")
+
+        if state not in ['Lawrence-Krammer', 'braid word', 'invariants'] :
+            raise ValueError(f"Invalid param: {state}. 'state' parameter must be one of 'Lawrence-Krammer', 'braid word', or 'invariants'.")
 
         self.braid_index = braid_index
         self.B = BraidGroup(self.braid_index)
-        self.max_braid_length = 70 # somewhat arbitrary, still computes signature for longer braids
+        self.max_braid_length = 75 # somewhat arbitrary, still computes signature for longer braids
 
         # randomly pick a target signature between -22 and 22 for each episode 
         # ideally there should be a "teacher" creating a "curriculum," carefully  
         # selecting which tasks to train on 
-        self.target_signature_min = -22
-        self.target_signature_max = 22
+        self.target_signature_min = -np.round(self.max_braid_length/2.5)
+        self.target_signature_max = np.round(self.max_braid_length/2.5)
         self.target_signature = np.random.randint(self.target_signature_min, self.target_signature_max+1)
 
         # braid_index = 3 would give 5 actions: {sigma_1, sigma_2, sigma_{-1}, sigma_{-2}, STOP}
