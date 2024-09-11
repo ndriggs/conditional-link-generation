@@ -63,6 +63,10 @@ class LinkBuilderEnv(gym.Env):
         self.braid_word_lk_rep = self.generator_lk_matrices[self.braid_word[0]]
         self.link = Link(self.B(self.braid_word))
         self.current_signature = self.link.signature()
+
+        # setting this equal to target signature gives a large negative reward on the first step 
+        # and smaller rewards on subsequent steps 
+        self.t_minus_1_signature = self.target_signature 
         
         self.target_signature = target_signature
 
@@ -78,6 +82,8 @@ class LinkBuilderEnv(gym.Env):
                 generator = -generator
             self.braid_word.append(generator)
             self.braid_word_lk_rep = self.braid_word_lk_rep @ self.generator_lk_matrices[generator]
+            self.link = Link(self.B(self.braid_word))
+            self.current_signature = self.link.signature()
 
             terminated = False 
             if len(self.braid_word) >= self.max_braid_length :
@@ -87,7 +93,8 @@ class LinkBuilderEnv(gym.Env):
 
             # calculate the reward
             if reward_type == 'dense' :
-                ### max reward 0 or 100???? ###
+                reward = np.abs(self.t_minus_1_signature - self.target_signature) \
+                    - np.abs(self.current_signature - self.target_signature)
             elif reward_type == 'sparse' :
                 reward = 0
 
@@ -112,7 +119,7 @@ class LinkBuilderEnv(gym.Env):
     # computes the Lawrence-Krammer representation of sigma_k (k > 0) with a braid index of n
     # lk_rep and index functions courtesy of Mark Hughes
     def lk_rep(self,n,k):
-        M=np.zeros((n*(n-1)//2,n*(n-1)//2))
+        M=np.zeros((n*(n-1)//2,n*(n-1)//2), dtype=np.float64)  
         q=np.sqrt(2)
         t=np.pi
         for i in range(1,n):
