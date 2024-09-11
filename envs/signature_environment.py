@@ -78,14 +78,28 @@ class LinkBuilderEnv(gym.Env):
                 generator = -generator
             self.braid_word.append(generator)
             self.braid_word_lk_rep = self.braid_word_lk_rep @ self.generator_lk_matrices[generator]
+
             terminated = False 
             if len(self.braid_word) >= self.max_braid_length :
                 truncated = True
             else :
                 truncated = False
-        else :
+
+            # calculate the reward
+            if reward_type == 'dense' :
+                ### max reward 0 or 100???? ###
+            elif reward_type == 'sparse' :
+                reward = 0
+
+        else : # the STOP action was selected
             terminated = True
             truncated = False
+
+            # calculate the reward
+            if reward_type == 'dense' :
+                reward = 0
+            elif reward_type == 'sparse' :
+                reward = -np.abs(self.current_signature - self.target_signature)
 
         return np.array([self.state], dtype=np.float32), reward, done, {}
 
