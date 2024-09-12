@@ -2,18 +2,17 @@ import gymnasium as gym
 from gymnasium import spaces
 import snappy
 import numpy as np
-import torch
 
 class LinkBuilderEnv(gym.Env):
-    def __init__(self, braid_index: int = 7, state: str = 'Lawrence-Krammer', reward_type: str = 'dense', 
+    def __init__(self, reward_type: str, braid_index: int = 7, state: str = 'Lawrence-Krammer', 
                  curiousity: bool = False):
         super(LinkBuilderEnv, self).__init__()
 
         if braid_index < 3 : 
             raise ValueError(f"Invalid param: {braid_index}. 'braid_index' parameter must be greater than 2")
 
-        if state not in ['Lawrence-Krammer', 'invariants'] :
-            raise ValueError(f"Invalid param: {state}. 'state' parameter must be one of 'Lawrence-Krammer' or 'invariants'.")
+        if state not in ['Lawrence-Krammer', 'invariants', 'LK_plus_signatures'] :
+            raise ValueError(f"Invalid param: {state}. 'state' parameter must be one of 'Lawrence-Krammer', 'invariants', or 'LK_plus_signatures'.")
 
         if reward_type not in ['dense', 'sparse'] :
             raise ValueError(f"Invalid param: {reward_type}. 'reward_type' parameter must be one of 'dense' or 'sparse'")
@@ -21,30 +20,53 @@ class LinkBuilderEnv(gym.Env):
         self.braid_index = braid_index
         self.B = BraidGroup(self.braid_index)
         self.max_braid_length = 75 # somewhat arbitrary, still computes signature for longer braids
+        self.lk_matrix_size = self.braid_index*(self.braid_index-1)//2 # code credit: Mark Hughes
 
         # randomly pick a target signature between -target signature min and max for each episode 
         # ideally there should be a "teacher" creating a "curriculum," carefully  
         # selecting which tasks to train on 
-        self.target_signature_min = -np.round(self.max_braid_length/2.5)
-        self.target_signature_max = np.round(self.max_braid_length/2.5)
-        self.target_signature = np.random.randint(self.target_signature_min, self.target_signature_max+1)
+        # self.target_signature_min = -np.round(self.max_braid_length/2.1)
+        # self.target_signature_max = np.round(self.max_braid_length/2.1)
+        # self.target_signature = np.random.randint(self.target_signature_min, self.target_signature_max+1)
+        self.target_signatures = [-12,-11,-10,10,11,12]
+        self.target_signature = np.random.choice(self.target_signatures)
 
         # braid_index = 3 would give 5 actions: {sigma_1, sigma_2, sigma_{-1}, sigma_{-2}, STOP}
         self.action_space = spaces.Discrete((self.braid_index-1)*2 + 1) 
 
         # create the observation space
         if state == 'Lawrence-Krammer' :
-            self.lk_matrix_size = self.braid_index*(self.braid_index-1)//2 # code credit: Mark Hughes
-
             # the LK rep can blow up for large braid words 
-            observation_space = gym.spaces.Box(low=-2e13, high=6e13, 
-                                               shape=(self.lk_matrix_size, self.lk_matrix_size), 
-                                               dtype=np.float64)
+            self.observation_space = spaces.Box(low=-2e13, high=6e13, 
+                                                shape=(self.lk_matrix_size, self.lk_matrix_size), 
+                                                dtype=np.float64)
+
+        elif state == 'LK_plus_signatures' :
+            # Bounds for the first 2 dimensions representing target signature and current signature
+            low_signature = np.array([min(self.target_signatures), -self.max_braid_length], dtype=np.float64)
+            high_signature = np.array([max(self.target_signatures), self.max_braid_length], dtype=np.float64)
+
+            # Bounds for the remaining LK rep dimensions 
+            low_lk_rep = np.full(self.lk_matrix_size**2, -2e13, dtype=np.float64)
+            high_lk_rep = np.full(self.lk_matrix_size**2, 6e13, dtype=np.float64)
+
+            # Combine the low and high bounds for all dimensions
+            low = np.concatenate([low_signature, low_lk_rep])
+            high = np.concatenate([high_signature, high_lk_rep])
+
+            self.observation_space = spaces.Box(low=low, high=high, dtype=np.float64)
+
+        elif state == 'invariants' :
+            pass
         
         # initialize the braid word with a random generator, could also experiment with starting with it empty
         self.braid_word = [np.random.choice([i for i in range(-self.braid_index+1, self.braid_index)  if i != 0])]
         self.link = Link(self.B(self.braid_word))
         self.current_signature = self.link.signature()
+
+        # for reward_type = 'dense', setting this equal to target_signature gives a large negative reward
+        # on the first step and smaller rewards on subsequent steps. It is unsed for reward_type = 'sparse'
+        self.t_minus_1_signature = self.target_signature
 
         # compute the Lawrence-Krammer representation for each braid group generator
         # code courtesy of Mark Hughes
@@ -57,18 +79,19 @@ class LinkBuilderEnv(gym.Env):
 
         self.braid_word_lk_rep = self.generator_lk_matrices[self.braid_word[0]]
 
-    def reset(self, target_signature: int):
+    def reset(self): # target_signature: int
         # initialize the braid word with a random generator, could also experiment with starting with it empty
         self.braid_word = [np.random.choice([i for i in range(-self.braid_index+1, self.braid_index)  if i != 0])]
         self.braid_word_lk_rep = self.generator_lk_matrices[self.braid_word[0]]
         self.link = Link(self.B(self.braid_word))
         self.current_signature = self.link.signature()
 
-        # setting this equal to target signature gives a large negative reward on the first step 
-        # and smaller rewards on subsequent steps 
+        # for reward_type = 'dense', setting this equal to target signature gives a large negative reward
+        # on the first step and smaller rewards on subsequent steps. It is unsed for reward_type = 'sparse'
         self.t_minus_1_signature = self.target_signature 
         
-        self.target_signature = target_signature
+        # self.target_signature = target_signature
+        self.target_signature = np.random.choice(self.target_signatures)
 
         return np.array([self.state], dtype=np.float32)
 
@@ -97,6 +120,8 @@ class LinkBuilderEnv(gym.Env):
                     - np.abs(self.current_signature - self.target_signature)
             elif reward_type == 'sparse' :
                 reward = 0
+
+            self.t_minus_1_signature = self.current_signature
 
         else : # the STOP action was selected
             terminated = True
