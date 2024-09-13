@@ -1,0 +1,12 @@
+Stable Baselines Colab Notebooks
+https://github.com/araffin/rl-tutorial-jnrr19?tab=readme-ov-file
+
+RL Zoo for Hyperparameter Tuning
+https://github.com/DLR-RM/rl-baselines3-zoo
+
+RL Tips and Tricks
+https://stable-baselines3.readthedocs.io/en/master/guide/rl_tips.html
+
+Empirical Design in Reinforcement Learning
+https://arxiv.org/abs/2304.01315
+
