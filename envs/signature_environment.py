@@ -4,7 +4,7 @@ import snappy
 import numpy as np
 
 class LinkBuilderEnv(gym.Env):
-    def __init__(self, reward_type: str, braid_index: int = 7, state_rep: str = 'Lawrence-Krammer', 
+    def __init__(self, reward_type: str = 'sparse', braid_index: int = 7, state_rep: str = 'Lawrence-Krammer', 
                  curiousity: bool = False):
         super(LinkBuilderEnv, self).__init__()
 
