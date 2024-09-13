@@ -1,17 +1,21 @@
 import gymnasium as gym
 from gymnasium import spaces
+from typing import Any
+from sage.all import BraidGroup, Link, Integer
+import warnings
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="pkg_resources")
 import snappy
 import numpy as np
 
 class LinkBuilderEnv(gym.Env):
-    def __init__(self, reward_type: str = 'sparse', braid_index: int = 7, state_rep: str = 'Lawrence-Krammer', 
+    def __init__(self, reward_type: str = 'dense', braid_index: int = 7, state_rep: str = 'LK_plus_signatures', 
                  curiousity: bool = False):
         super(LinkBuilderEnv, self).__init__()
 
         if braid_index < 3 : 
             raise ValueError(f"Invalid param: {braid_index}. 'braid_index' parameter must be greater than 2")
 
-        if state not in ['Lawrence-Krammer', 'invariants', 'LK_plus_signatures'] :
+        if state_rep not in ['Lawrence-Krammer', 'invariants', 'LK_plus_signatures'] :
             raise ValueError(f"Invalid param: {state_rep}. 'state_rep' parameter must be one of 'Lawrence-Krammer', 'invariants', or 'LK_plus_signatures'.")
 
         if reward_type not in ['dense', 'sparse'] :
@@ -21,6 +25,7 @@ class LinkBuilderEnv(gym.Env):
         self.B = BraidGroup(self.braid_index)
         self.max_braid_length = 75 # somewhat arbitrary, still computes signature for longer braids
         self.lk_matrix_size = self.braid_index*(self.braid_index-1)//2 # code credit: Mark Hughes
+        self.reward_type = reward_type
 
         # randomly pick a target signature between -target signature min and max for each episode 
         # ideally there should be a "teacher" creating a "curriculum," carefully  
@@ -65,9 +70,9 @@ class LinkBuilderEnv(gym.Env):
             elif np.sign(sigma_i) == 1:
                 self.generator_lk_matrices[sigma_i]=self.lk_rep(self.braid_index,np.abs(sigma_i))
 
-    def reset(self): # target_signature: int
+    def reset(self, seed: int | None = None, options: dict[str, Any] | None = None): # target_signature: int
         # initialize the braid word with a random generator, could also experiment with starting with it empty
-        self.braid_word = [np.random.choice([i for i in range(-self.braid_index+1, self.braid_index)  if i != 0])]
+        self.braid_word = [Integer(np.random.choice([i for i in range(-self.braid_index+1, self.braid_index)  if i != 0]))]
         self.braid_word_lk_rep = self.generator_lk_matrices[self.braid_word[0]]
         self.link = Link(self.B(self.braid_word))
         self.current_signature = self.link.signature()
@@ -94,7 +99,7 @@ class LinkBuilderEnv(gym.Env):
             generator = (action % (self.braid_index-1)) + 1
             if action >= self.braid_index - 1 :
                 generator = -generator
-            self.braid_word.append(generator)
+            self.braid_word.append(Integer(generator))
             self.braid_word_lk_rep = self.braid_word_lk_rep @ self.generator_lk_matrices[generator]
             self.link = Link(self.B(self.braid_word))
             self.current_signature = self.link.signature()
@@ -106,10 +111,10 @@ class LinkBuilderEnv(gym.Env):
                 truncated = False
 
             # calculate the reward
-            if reward_type == 'dense' :
+            if self.reward_type == 'dense' :
                 reward = np.abs(self.t_minus_1_signature - self.target_signature) \
                     - np.abs(self.current_signature - self.target_signature)
-            elif reward_type == 'sparse' :
+            elif self.reward_type == 'sparse' :
                 reward = 0
 
             self.t_minus_1_signature = self.current_signature
@@ -119,9 +124,9 @@ class LinkBuilderEnv(gym.Env):
             truncated = False
 
             # calculate the reward
-            if reward_type == 'dense' :
+            if self.reward_type == 'dense' :
                 reward = 0
-            elif reward_type == 'sparse' :
+            elif self.reward_type == 'sparse' :
                 reward = -np.abs(self.current_signature - self.target_signature)
 
         if self.state_rep == 'Lawrence-Krammer' :
@@ -132,7 +137,7 @@ class LinkBuilderEnv(gym.Env):
 
         return state, reward, terminated, truncated, {}
 
-    def render(self, mode='human'):
+    def render(self):
         self.link.plot()
 
     def close(self):
