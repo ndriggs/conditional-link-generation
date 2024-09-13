@@ -4,7 +4,7 @@ import snappy
 import numpy as np
 
 class LinkBuilderEnv(gym.Env):
-    def __init__(self, reward_type: str, braid_index: int = 7, state: str = 'Lawrence-Krammer', 
+    def __init__(self, reward_type: str, braid_index: int = 7, state_rep: str = 'Lawrence-Krammer', 
                  curiousity: bool = False):
         super(LinkBuilderEnv, self).__init__()
 
@@ -12,7 +12,7 @@ class LinkBuilderEnv(gym.Env):
             raise ValueError(f"Invalid param: {braid_index}. 'braid_index' parameter must be greater than 2")
 
         if state not in ['Lawrence-Krammer', 'invariants', 'LK_plus_signatures'] :
-            raise ValueError(f"Invalid param: {state}. 'state' parameter must be one of 'Lawrence-Krammer', 'invariants', or 'LK_plus_signatures'.")
+            raise ValueError(f"Invalid param: {state_rep}. 'state_rep' parameter must be one of 'Lawrence-Krammer', 'invariants', or 'LK_plus_signatures'.")
 
         if reward_type not in ['dense', 'sparse'] :
             raise ValueError(f"Invalid param: {reward_type}. 'reward_type' parameter must be one of 'dense' or 'sparse'")
@@ -29,19 +29,19 @@ class LinkBuilderEnv(gym.Env):
         # self.target_signature_max = np.round(self.max_braid_length/2.1)
         # self.target_signature = np.random.randint(self.target_signature_min, self.target_signature_max+1)
         self.target_signatures = [-12,-11,-10,10,11,12]
-        self.target_signature = np.random.choice(self.target_signatures)
 
         # braid_index = 3 would give 5 actions: {sigma_1, sigma_2, sigma_{-1}, sigma_{-2}, STOP}
         self.action_space = spaces.Discrete((self.braid_index-1)*2 + 1) 
 
         # create the observation space
-        if state == 'Lawrence-Krammer' :
+        self.state_rep = state_rep
+        if self.state_rep == 'Lawrence-Krammer' :
             # the LK rep can blow up for large braid words 
             self.observation_space = spaces.Box(low=-2e13, high=6e13, 
                                                 shape=(self.lk_matrix_size, self.lk_matrix_size), 
                                                 dtype=np.float64)
 
-        elif state == 'LK_plus_signatures' :
+        elif self.state_rep == 'LK_plus_signatures' :
             # Bounds for the first 2 dimensions representing target signature and current signature
             low_signature = np.array([min(self.target_signatures), -self.max_braid_length], dtype=np.float64)
             high_signature = np.array([max(self.target_signatures), self.max_braid_length], dtype=np.float64)
@@ -56,18 +56,6 @@ class LinkBuilderEnv(gym.Env):
 
             self.observation_space = spaces.Box(low=low, high=high, dtype=np.float64)
 
-        elif state == 'invariants' :
-            pass
-        
-        # initialize the braid word with a random generator, could also experiment with starting with it empty
-        self.braid_word = [np.random.choice([i for i in range(-self.braid_index+1, self.braid_index)  if i != 0])]
-        self.link = Link(self.B(self.braid_word))
-        self.current_signature = self.link.signature()
-
-        # for reward_type = 'dense', setting this equal to target_signature gives a large negative reward
-        # on the first step and smaller rewards on subsequent steps. It is unsed for reward_type = 'sparse'
-        self.t_minus_1_signature = self.target_signature
-
         # compute the Lawrence-Krammer representation for each braid group generator
         # code courtesy of Mark Hughes
         self.generator_lk_matrices = {}
@@ -77,8 +65,6 @@ class LinkBuilderEnv(gym.Env):
             elif np.sign(sigma_i) == 1:
                 self.generator_lk_matrices[sigma_i]=self.lk_rep(self.braid_index,np.abs(sigma_i))
 
-        self.braid_word_lk_rep = self.generator_lk_matrices[self.braid_word[0]]
-
     def reset(self): # target_signature: int
         # initialize the braid word with a random generator, could also experiment with starting with it empty
         self.braid_word = [np.random.choice([i for i in range(-self.braid_index+1, self.braid_index)  if i != 0])]
@@ -86,14 +72,19 @@ class LinkBuilderEnv(gym.Env):
         self.link = Link(self.B(self.braid_word))
         self.current_signature = self.link.signature()
 
-        # for reward_type = 'dense', setting this equal to target signature gives a large negative reward
-        # on the first step and smaller rewards on subsequent steps. It is unsed for reward_type = 'sparse'
-        self.t_minus_1_signature = self.target_signature 
-        
         # self.target_signature = target_signature
         self.target_signature = np.random.choice(self.target_signatures)
 
-        return np.array([self.state], dtype=np.float32)
+        # for reward_type = 'dense', setting this equal to target signature gives a large negative reward
+        # on the first step and smaller rewards on subsequent steps. It is unsed for reward_type = 'sparse'
+        self.t_minus_1_signature = self.target_signature 
+
+        # calculate and return the state + info dict
+        if self.state_rep == 'Lawrence-Krammer' :
+            return self.braid_word_lk_rep, {}
+        elif self.state_rep == 'LK_plus_signatures':
+            return np.concatenate([np.array([self.target_signature, self.current_signature]),
+                                   self.braid_word_lk_rep.flatten()]), {}
 
     def step(self, action):
         # if a generator was appended, i.e. if the STOP token wasn't selected
@@ -133,7 +124,13 @@ class LinkBuilderEnv(gym.Env):
             elif reward_type == 'sparse' :
                 reward = -np.abs(self.current_signature - self.target_signature)
 
-        return np.array([self.state], dtype=np.float32), reward, done, {}
+        if self.state_rep == 'Lawrence-Krammer' :
+            state = self.braid_word_lk_rep
+        elif self.state_rep == 'LK_plus_signatures' :
+            state = np.concatenate([np.array([self.target_signature, self.current_signature]),
+                                    self.braid_word_lk_rep.flatten()])
+
+        return state, reward, terminated, truncated, {}
 
     def render(self, mode='human'):
         self.link.plot()
