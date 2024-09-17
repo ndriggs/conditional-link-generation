@@ -8,8 +8,11 @@ import snappy
 import numpy as np
 
 class LinkBuilderEnv(gym.Env):
-    def __init__(self, reward_type: str = 'dense', braid_index: int = 7, state_rep: str = 'LK_plus_signatures', 
-                 curiousity: bool = False):
+
+    metadata = {"render_modes": ["knot_diagram", "braid_word"], "render_fps": 2}
+
+    def __init__(self, reward_type: str, braid_index: int = 7, state_rep: str = 'LK_plus_signatures', 
+                 curiousity: bool = False, render_mode='diagram'):
         super(LinkBuilderEnv, self).__init__()
 
         if braid_index < 3 : 
@@ -26,6 +29,8 @@ class LinkBuilderEnv(gym.Env):
         self.max_braid_length = 75 # somewhat arbitrary, still computes signature for longer braids
         self.lk_matrix_size = self.braid_index*(self.braid_index-1)//2 # code credit: Mark Hughes
         self.reward_type = reward_type
+        self.num_envs = 1 # so StableBaselines3 can use VecEnv
+        self.render_mode = render_mode
 
         # randomly pick a target signature between -target signature min and max for each episode 
         # ideally there should be a "teacher" creating a "curriculum," carefully  
@@ -33,7 +38,7 @@ class LinkBuilderEnv(gym.Env):
         # self.target_signature_min = -np.round(self.max_braid_length/2.1)
         # self.target_signature_max = np.round(self.max_braid_length/2.1)
         # self.target_signature = np.random.randint(self.target_signature_min, self.target_signature_max+1)
-        self.target_signatures = [-12,-11,-10,10,11,12]
+        self.target_signatures = [-11,-10,-9,9,10,11]
 
         # braid_index = 3 would give 5 actions: {sigma_1, sigma_2, sigma_{-1}, sigma_{-2}, STOP}
         self.action_space = spaces.Discrete((self.braid_index-1)*2 + 1) 
