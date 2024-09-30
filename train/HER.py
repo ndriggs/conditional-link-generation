@@ -1,6 +1,9 @@
 from stable_baselines3 import HerReplayBuffer, DQN
 from stable_baselines3.her.goal_selection_strategy import GoalSelectionStrategy
 import gymnasium as gym
+from gymnasium.envs.registration import register
+from stable_baselines3.common.env_util import make_vec_env
+from stable_baselines3.common.vec_env import VecNormalize
 import os
 import sys
 
@@ -16,7 +19,7 @@ sys.path.append(parent_dir)
 from envs.signature_goal_env import LinkBuilderEnv
 
 
-def evaluate(env, model) :
+def evaluate_single_env(env, model) :
     time_taken = []
     missed_targets = []
     obs, info = env.reset()
@@ -33,15 +36,42 @@ def evaluate(env, model) :
     print('time taken avg: ', np.mean(time_taken), 'std', np.std(time_taken), 'max', np.max(time_taken), 'min', np.min(time_taken))
     print('missed targets avg:', np.mean(np.abs(np.array(missed_targets))), 'min', np.min(np.abs(np.array(missed_targets))))
 
+def evaluate_vec_env(env, model) :
+    time_taken = []
+    missed_targets = []
+    obs = env.reset()
+    for _ in range(1000):
+        action, _ = model.predict(obs, deterministic=True)
+        obs, rewards, dones, infos = env.step(action)
+        for i, done in enumerate(dones) :
+            if done : 
+                if 'time_taken' in infos[i].keys() :
+                    time_taken.append(infos[i]['time_taken'])
+                elif 'missed_target' in infos[i].keys() :
+                    missed_targets.append(infos[i]['missed_target'])
+    print('percent goals achieved: ', len(time_taken)/(len(time_taken)+len(missed_targets)))
+    time_taken = np.array(time_taken)
+    print('time taken avg: ', np.mean(time_taken), 'std', np.std(time_taken), 'max', np.max(time_taken), 'min', np.min(time_taken))
+    print('missed targets avg:', np.mean(np.abs(np.array(missed_targets))), 'min', np.min(np.abs(np.array(missed_targets))))
+
 
 
 # Available strategies (cf paper): future, final, episode
 goal_selection_strategy = "future" # equivalent to GoalSelectionStrategy.FUTURE
 
-env = LinkBuilderEnv()
+register(
+    id='LinkBuilderEnv-v1',  
+    entry_point='envs.signature_goal_env:LinkBuilderEnv', 
+)
+
+# Make a vectorized environment
+vec_env = make_vec_env("LinkBuilderEnv-v1", n_envs=4)
+
+# Normalize the vectorized environment
+vec_env = VecNormalize(vec_env, clip_obs=6e13, clip_reward=100, gamma=0.97)
 model = DQN(
     "MultiInputPolicy",
-    env,
+    vec_env,
     replay_buffer_class=HerReplayBuffer,
     gamma=.97,
     # Parameters for HER
@@ -53,13 +83,13 @@ model = DQN(
 )
 
 print('pre training evaluation')
-evaluate(env, model)
+evaluate_vec_env(vec_env, model)
 
 # Train the model
-model.learn(2000)
+model.learn(20000)
 
 print('post training evaluation')
-evaluate(env, model)
+evaluate(vec_env, model)
 
 model.save("her_env")
 # Because it needs access to `env.compute_reward()`

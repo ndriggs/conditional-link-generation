@@ -3,14 +3,15 @@ from gymnasium import spaces
 import gymnasium_robotics
 from typing import Any
 from sage.all import BraidGroup, Link, Integer
-import warnings
-warnings.filterwarnings("ignore", category=DeprecationWarning, module="pkg_resources")
 import snappy
 import numpy as np
+import warnings
+warnings.simplefilter("error")
+
 
 class LinkBuilderEnv(gymnasium_robotics.core.GoalEnv):
 
-    metadata = {"render_modes": ["knot_diagram", "braid_word"], "render_fps": 2}
+    metadata = {"render_modes": ["knot_diagram", "braid_word", "rgb_array"], "render_fps": 2}
 
     def __init__(self, braid_index: int = 7, state_rep: str = 'LK_plus_signatures', 
                  curiousity: bool = False, render_mode: str = 'knot_diagram'):
@@ -27,7 +28,7 @@ class LinkBuilderEnv(gymnasium_robotics.core.GoalEnv):
 
         self.braid_index = braid_index
         self.B = BraidGroup(self.braid_index)
-        self.max_braid_length = 50 # 75 somewhat arbitrary, still computes signature for longer braids
+        self.max_braid_length = 40 # 75 somewhat arbitrary, still computes signature for longer braids
         self.lk_matrix_size = self.braid_index*(self.braid_index-1)//2 # code credit: Mark Hughes
         self.num_envs = 1 # so StableBaselines3 can use VecEnv
         self.render_mode = render_mode
@@ -39,7 +40,7 @@ class LinkBuilderEnv(gymnasium_robotics.core.GoalEnv):
         # self.target_signature_max = np.round(self.max_braid_length/2.1)
         # self.target_signature = np.random.randint(self.target_signature_min, self.target_signature_max+1)
         # self.target_signatures = [-11,-10,-9,9,10,11]
-        self.target_signatures = np.arange(-12,12)
+        self.target_signatures = np.arange(-12,13)
 
         # braid_index = 3 would give 4 actions: {sigma_1, sigma_2, sigma_{-1}, sigma_{-2}}
         self.action_space = spaces.Discrete((self.braid_index-1)*2) 
@@ -90,13 +91,13 @@ class LinkBuilderEnv(gymnasium_robotics.core.GoalEnv):
         self.braid_word_lk_rep = self.generator_lk_matrices[self.braid_word[0]]
         self.link = Link(self.B(self.braid_word))
         self.current_signature = self.link.signature()
-        self.achieved_goal = np.array([self.current_signature])
+        self.achieved_goal = np.array([self.current_signature], dtype=np.int32)
         # self.t_minus_1_signature = self.current_signature 
         # self.target_signature = target_signature
         self.target_signature = np.random.choice(self.target_signatures)
         while self.target_signature == 0 :
             self.target_signature = np.random.choice(self.target_signatures)
-        self.desired_goal = np.array([self.target_signature])
+        self.desired_goal = np.array([self.target_signature], dtype=np.int32)
 
         # calculate the state
         if self.state_rep == 'Lawrence-Krammer' :
@@ -123,10 +124,17 @@ class LinkBuilderEnv(gymnasium_robotics.core.GoalEnv):
         if action >= (self.braid_index - 1) :
             generator = -generator
         self.braid_word.append(Integer(generator))
-        self.braid_word_lk_rep = self.braid_word_lk_rep @ self.generator_lk_matrices[generator]
+        try: 
+            self.braid_word_lk_rep = self.braid_word_lk_rep @ self.generator_lk_matrices[generator]
+            terminated_info = {'RuntimeWarning': False}
+        except RuntimeWarning as e: 
+            print('RuntimeWarning message: ', e)
+            print('braid word length: ', len(self.braid_word))
+            print('max: ', np.max(self.braid_word_lk_rep), 'min: ', np.min(self.braid_word_lk_rep))
+            terminated_info = {'RuntimeWarning': True}
         self.link = Link(self.B(self.braid_word))
         self.current_signature = self.link.signature()
-        self.achieved_goal = np.array([self.current_signature])
+        self.achieved_goal = np.array([self.current_signature], dtype=np.int32)
             
             # terminated_info = {'stop_action_selected': False}
 
@@ -135,7 +143,7 @@ class LinkBuilderEnv(gymnasium_robotics.core.GoalEnv):
             
         truncated_info = {'braid_word_length': len(self.braid_word)}
         reward = self.compute_reward(self.achieved_goal, self.desired_goal, {})
-        terminated = self.compute_terminated(self.achieved_goal, self.desired_goal, {})
+        terminated = self.compute_terminated(self.achieved_goal, self.desired_goal, terminated_info)
         truncated = self.compute_truncated(self.achieved_goal, self.desired_goal, truncated_info)
 
         if self.state_rep == 'Lawrence-Krammer' :
@@ -169,6 +177,8 @@ class LinkBuilderEnv(gymnasium_robotics.core.GoalEnv):
             return True
         # elif info['stop_action_selected'] :
         #     return True
+        elif info['RuntimeWarning'] :
+            return True
         else :
             return False
 
