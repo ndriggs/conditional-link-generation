@@ -4,6 +4,7 @@ import gymnasium as gym
 from gymnasium.envs.registration import register
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import VecNormalize
+import numpy as np
 import os
 import sys
 

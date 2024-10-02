@@ -2,8 +2,8 @@ import gymnasium as gym
 from gymnasium import spaces
 from typing import Any
 from sage.all import BraidGroup, Link, Integer
-import warnings
-warnings.filterwarnings("ignore", category=DeprecationWarning, module="pkg_resources")
+# import warnings
+# warnings.filterwarnings("ignore", category=DeprecationWarning, module="pkg_resources")
 import snappy
 import numpy as np
 
@@ -12,7 +12,7 @@ class LinkBuilderEnv(gym.Env):
     metadata = {"render_modes": ["knot_diagram", "braid_word"], "render_fps": 2}
 
     def __init__(self, reward_type: str, braid_index: int = 7, state_rep: str = 'LK_plus_signatures', 
-                 curiousity: bool = False, render_mode='diagram'):
+                 curiousity: bool = False, render_mode='knot_diagram'):
         super(LinkBuilderEnv, self).__init__()
 
         if braid_index < 3 : 
@@ -74,6 +74,9 @@ class LinkBuilderEnv(gym.Env):
                 self.generator_lk_matrices[sigma_i]=np.linalg.inv(self.lk_rep(self.braid_index,np.abs(sigma_i)))
             elif np.sign(sigma_i) == 1:
                 self.generator_lk_matrices[sigma_i]=self.lk_rep(self.braid_index,np.abs(sigma_i))
+
+        if curiousity :
+            
 
     def reset(self, seed: int | None = None, options: dict[str, Any] | None = None): # target_signature: int
         # initialize the braid word with a random generator, could also experiment with starting with it empty
