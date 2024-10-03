@@ -160,20 +160,17 @@ class LinkBuilderEnv(gymnasium_robotics.core.GoalEnv):
 
         info = {}
         if terminated :
-            info['time_taken'] = self.target_signature / (len(self.braid_word) - 1)
+            info['time_taken'] = np.abs(self.target_signature) / (len(self.braid_word) - 1)
         elif truncated :
             info['missed_target'] = self.target_signature
 
         return obs, reward, terminated, truncated, info
 
     def compute_reward(self, achieved_goal, desired_goal, info) :
-        if achieved_goal == desired_goal :
-            return 1
-        else :
-            return 0
+        return (achieved_goal == desired_goal).all(axis=-1).astype(np.float32)
 
     def compute_terminated(self, achieved_goal, desired_goal, info) :
-        if achieved_goal == desired_goal :
+        if all(achieved_goal == desired_goal) :
             return True
         # elif info['stop_action_selected'] :
         #     return True

@@ -69,7 +69,7 @@ register(
 vec_env = make_vec_env("LinkBuilderEnv-v1", n_envs=4)
 
 # Normalize the vectorized environment
-vec_env = VecNormalize(vec_env, clip_obs=6e13, clip_reward=100, gamma=0.97)
+vec_env = VecNormalize(vec_env, norm_reward=False, clip_obs=6e13, clip_reward=100, gamma=0.97)
 model = DQN(
     "MultiInputPolicy",
     vec_env,

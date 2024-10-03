@@ -40,5 +40,19 @@ for sigma_i in range(-braid_index+1,braid_index):
     elif np.sign(sigma_i) == 1:
         generator_lk_matrices[sigma_i]=lk_rep(braid_index,np.abs(sigma_i))
 
-generators = [i for i in np.arange(-braid_index, braid_index+1) if i != 0]
+generators = [i for i in np.arange(-braid_index+1, braid_index) if i != 0]
 
+B = BraidGroup(braid_index)
+
+lk_reps = []
+for _ in range(2250) :
+  braid_word = np.random.choice(generators, size=40, replace=True)
+  lk_rep = generator_lk_matrices[braid_word[0]]
+  for i, gen in enumerate(braid_word[1:]) :
+    lk_rep = lk_rep @ generator_lk_matrices[gen]
+    sig = Link(B([Integer(sigma) for sigma in braid_word[:i+2]])).signature()
+    lk_reps.append(list(lk_rep.flatten()) + [sig])
+
+lk_reps = np.array(lk_reps)
+
+np.save('lk_and_sig.npy', lk_reps)
