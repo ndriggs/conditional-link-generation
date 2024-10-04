@@ -4,7 +4,9 @@ import gymnasium as gym
 from gymnasium.envs.registration import register
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import VecNormalize
+from stable_baselines3.common.evaluation import evaluate_policy
 import numpy as np
+from scipy.stats import ttest_ind
 import os
 import sys
 
@@ -40,8 +42,9 @@ def evaluate_single_env(env, model) :
 def evaluate_vec_env(env, model) :
     time_taken = []
     missed_targets = []
+    runtime_warnings = []
     obs = env.reset()
-    for _ in range(1000):
+    for _ in range(2000):
         action, _ = model.predict(obs, deterministic=True)
         obs, rewards, dones, infos = env.step(action)
         for i, done in enumerate(dones) :
@@ -50,10 +53,15 @@ def evaluate_vec_env(env, model) :
                     time_taken.append(infos[i]['time_taken'])
                 elif 'missed_target' in infos[i].keys() :
                     missed_targets.append(infos[i]['missed_target'])
+                if infos[i]['RuntimeWarning'] :
+                    runtime_warnings.append([infos[i]['braid_length'], infos[i]['signature']])
+                    print('RuntimeWarning, braid length', infos[i]['braid_length'])
+                    print('Signature', infos[i]['signature'])
     print('percent goals achieved: ', len(time_taken)/(len(time_taken)+len(missed_targets)))
     time_taken = np.array(time_taken)
     print('time taken avg: ', np.mean(time_taken), 'std', np.std(time_taken), 'max', np.max(time_taken), 'min', np.min(time_taken))
     print('missed targets avg:', np.mean(np.abs(np.array(missed_targets))), 'min', np.min(np.abs(np.array(missed_targets))))
+    return time_taken, np.array(missed_targets)
 
 
 
@@ -83,16 +91,34 @@ model = DQN(
     verbose=1,
 )
 
+mean_reward, std_reward = evaluate_policy(model, vec_env, n_eval_episodes=200, warn=False)
+print(f"mean_reward before training: {mean_reward:.2f} +/- {std_reward:.2f}")
+
 print('pre training evaluation')
-evaluate_vec_env(vec_env, model)
+pre_time_taken, pre_missed_targets = evaluate_vec_env(vec_env, model)
 
 # Train the model
-model.learn(20000)
+model.learn(40000)
 
 print('post training evaluation')
-evaluate(vec_env, model)
+post_time_taken, post_missed_targets = evaluate_vec_env(vec_env, model)
+
+print('time taken')
+print(ttest_ind(pre_time_taken, post_time_taken, equal_var=False))
+
+print('missed targets')
+print(ttest_ind(pre_missed_targets, post_missed_targets, equal_var=False))
+
+mean_reward, std_reward = evaluate_policy(model, vec_env, n_eval_episodes=200)
+print(f"mean_reward after training: {mean_reward:.2f} +/- {std_reward:.2f}")
+
+np.save('pre_time_taken.npy', pre_time_taken)
+np.save('post_time_taken.npy', post_time_taken)
+np.save('pre_missed_targets.npy', pre_missed_targets)
+np.save('post_missed_targets.npy', post_missed_targets)
 
 model.save("her_env")
+vec_env.save("normalized_vec_env.pkl")
 # Because it needs access to `env.compute_reward()`
 # HER must be loaded with the env
 # model = model_class.load("her_env", env=env)

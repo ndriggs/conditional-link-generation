@@ -28,7 +28,7 @@ class LinkBuilderEnv(gymnasium_robotics.core.GoalEnv):
 
         self.braid_index = braid_index
         self.B = BraidGroup(self.braid_index)
-        self.max_braid_length = 40 # 75 somewhat arbitrary, still computes signature for longer braids
+        self.max_braid_length = 45 # 75 somewhat arbitrary, still computes signature for longer braids
         self.lk_matrix_size = self.braid_index*(self.braid_index-1)//2 # code credit: Mark Hughes
         self.num_envs = 1 # so StableBaselines3 can use VecEnv
         self.render_mode = render_mode
@@ -40,7 +40,7 @@ class LinkBuilderEnv(gymnasium_robotics.core.GoalEnv):
         # self.target_signature_max = np.round(self.max_braid_length/2.1)
         # self.target_signature = np.random.randint(self.target_signature_min, self.target_signature_max+1)
         # self.target_signatures = [-11,-10,-9,9,10,11]
-        self.target_signatures = np.arange(-12,13)
+        self.target_signatures = [sig for sig in np.arange(-18,19) if sig != 0]
 
         # braid_index = 3 would give 4 actions: {sigma_1, sigma_2, sigma_{-1}, sigma_{-2}}
         self.action_space = spaces.Discrete((self.braid_index-1)*2) 
@@ -95,8 +95,6 @@ class LinkBuilderEnv(gymnasium_robotics.core.GoalEnv):
         # self.t_minus_1_signature = self.current_signature 
         # self.target_signature = target_signature
         self.target_signature = np.random.choice(self.target_signatures)
-        while self.target_signature == 0 :
-            self.target_signature = np.random.choice(self.target_signatures)
         self.desired_goal = np.array([self.target_signature], dtype=np.int32)
 
         # calculate the state
@@ -158,7 +156,11 @@ class LinkBuilderEnv(gymnasium_robotics.core.GoalEnv):
             'desired_goal': self.desired_goal
         }
 
-        info = {}
+        info = {
+            'RuntimeWarning': terminated_info['RuntimeWarning'],
+            'braid_length': len(self.braid_word),
+            'signature': self.current_signature
+        }
         if terminated :
             info['time_taken'] = np.abs(self.target_signature) / (len(self.braid_word) - 1)
         elif truncated :
