@@ -15,6 +15,7 @@ def parse_args():
     parser.add_argument('--accelerator', type=str, default='gpu')
     parser.add_argument('--kernel_size', type=int, default=2)
     parser.add_argument('--layer_norm', type=bool, default=True)
+    parser.add_argument('--regression', type=bool, default=True)
     return parser.parse_args()
 
 def main():
