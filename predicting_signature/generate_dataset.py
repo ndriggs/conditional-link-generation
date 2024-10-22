@@ -40,18 +40,46 @@ for sigma_i in range(-braid_index+1,braid_index):
     elif np.sign(sigma_i) == 1:
         generator_lk_matrices[sigma_i]=lk_rep(braid_index,np.abs(sigma_i))
 
+
+def braid_word_to_lk_rep(braid_word) :
+    lk_rep = generator_lk_matrices[braid_word[0]]
+    for gen in braid_word[1:] :
+        lk_rep = lk_rep @ generator_lk_matrices[gen]
+    return lk_rep
+
 generators = [i for i in np.arange(-braid_index+1, braid_index) if i != 0]
 
 B = BraidGroup(braid_index)
 
 lk_reps = []
-for _ in range(2250) :
-  braid_word = np.random.choice(generators, size=40, replace=True)
-  lk_rep = generator_lk_matrices[braid_word[0]]
-  for i, gen in enumerate(braid_word[1:]) :
-    lk_rep = lk_rep @ generator_lk_matrices[gen]
-    sig = Link(B([Integer(sigma) for sigma in braid_word[:i+2]])).signature()
-    lk_reps.append(list(lk_rep.flatten()) + [sig])
+# for _ in range(2250) :
+#     braid_word = np.random.choice(generators, size=45, replace=True)
+#     lk_rep = generator_lk_matrices[braid_word[0]]
+#     for i, gen in enumerate(braid_word[1:]) :
+#         lk_rep = lk_rep @ generator_lk_matrices[gen]
+#         sig = Link(B([Integer(sigma) for sigma in braid_word[:i+2]])).signature()
+#         lk_reps.append(list(lk_rep.flatten()) + [sig])
+
+for braid_word_length in range(2, 46) :
+    for _ in range(braid_word_length*110) :
+        braid_word = np.random.choice(generators, size=braid_word_length, replace=True)
+        lk_rep = braid_word_to_lk_rep(braid_word)
+        sig = Link(B([Integer(sigma) for sigma in braid_word])).signature()
+        lk_reps.append(list(lk_rep.flatten()) + [sig])
+    for _ in range(braid_word_length*40) :
+        sigma = np.random.choice(generators)
+        braid_word = [sigma]
+        for _ in range(braid_word_length-1) :
+            probabilities = np.zeros(len(generators))
+            probabilities[(1+np.sign(sigma))*3:(1+np.sign(sigma))*3 + 6] = 0.1
+            probabilities[generators.index(sigma)] = 0.5
+            sigma = np.random.choice(generators, p=probabilities)
+            braid_word.append(sigma)
+            if np.random.uniform() <= 0.167 :
+                braid_word.append(-1*np.sign(sigma)*np.random.randint(1,braid_index))
+        lk_rep = braid_word_to_lk_rep(braid_word)
+        sig = Link(B([Integer(sigma) for sigma in braid_word])).signature()
+        lk_reps.append(list(lk_rep.flatten()) + [sig])
 
 lk_reps = np.array(lk_reps)
 
