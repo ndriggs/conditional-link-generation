@@ -1,5 +1,6 @@
 from sage.all import BraidGroup, Link, Integer
 import numpy as np
+import json
 
 def lk_rep(n,k):
     M=np.zeros((n*(n-1)//2,n*(n-1)//2), dtype=np.float64)
@@ -59,28 +60,34 @@ lk_reps = []
 #         lk_rep = lk_rep @ generator_lk_matrices[gen]
 #         sig = Link(B([Integer(sigma) for sigma in braid_word[:i+2]])).signature()
 #         lk_reps.append(list(lk_rep.flatten()) + [sig])
-
+braid_words = []
 for braid_word_length in range(2, 46) :
-    for _ in range(braid_word_length*110) :
+    for _ in range(braid_word_length*100) :
         braid_word = np.random.choice(generators, size=braid_word_length, replace=True)
         lk_rep = braid_word_to_lk_rep(braid_word)
         sig = Link(B([Integer(sigma) for sigma in braid_word])).signature()
         lk_reps.append(list(lk_rep.flatten()) + [sig])
+        braid_words.append(braid_word)
     for _ in range(braid_word_length*40) :
         sigma = np.random.choice(generators)
         braid_word = [sigma]
-        for _ in range(braid_word_length-1) :
+        insert_opp_prob = np.random.uniform(low=0,high=0.25)
+        while len(braid_word) < braid_word_length :
             probabilities = np.zeros(len(generators))
             probabilities[(1+np.sign(sigma))*3:(1+np.sign(sigma))*3 + 6] = 0.1
             probabilities[generators.index(sigma)] = 0.5
             sigma = np.random.choice(generators, p=probabilities)
             braid_word.append(sigma)
-            if np.random.uniform() <= 0.167 :
+            if np.random.uniform() <= insert_opp_prob :
                 braid_word.append(-1*np.sign(sigma)*np.random.randint(1,braid_index))
         lk_rep = braid_word_to_lk_rep(braid_word)
         sig = Link(B([Integer(sigma) for sigma in braid_word])).signature()
         lk_reps.append(list(lk_rep.flatten()) + [sig])
+        braid_words.append(braid_word)
 
 lk_reps = np.array(lk_reps)
 
 np.save('lk_and_sig.npy', lk_reps)
+
+with open("braid_words.txt", 'w') as f:
+    json.dump(braid_words, f)
