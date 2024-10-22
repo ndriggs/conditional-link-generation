@@ -2,21 +2,28 @@ import torch
 import torch.nn as nn
 import lightning as pl
 from torch.optim.lr_scheduler import ExponentialLR
+import numpy as np
 import math
 
 class MLP(pl.LightningModule):
     def __init__(self, lk_matrix_size, hidden_size, 
-                 dropout, num_invariants=1):
+                 dropout, num_invariants=1, classification=False, num_classes=41):
         super(MLP, self).__init__()
+
+        self.classification = classification
+        self.num_classes = num_classes
 
         self.mse_loss = nn.MSELoss()
         self.l1_loss = nn.L1Loss()
+        if classification :
+            self.cross_entropy = nn.CrossEntropyLoss()
 
         self.fc1 = nn.Linear(lk_matrix_size**2, hidden_size)
         self.fc2 = nn.Linear(hidden_size, hidden_size)
         self.fc3 = nn.Linear(hidden_size, num_invariants)
 
         self.dropout = nn.Dropout(dropout)
+
 
     def forward(self, x) :
         x = F.relu(self.fc1(x))
@@ -27,16 +34,29 @@ class MLP(pl.LightningModule):
 
         return x
 
+    def class_idx_to_sig(idx) :
+        max_min_sig = (self.num_classes-1)/2
+        idx[idx > max_min_sig] = -1*(idx[idx>max_min_sig] - max_min_sig)
+        return idx
+
     def training_step(self, batch, batch_idx):
         x, y = batch
         y_hat = self(x)
-        loss = self.mse_loss(y_hat, y)
+        if self.classification :
+            loss = self.cross_entropy(y_hat, y)
+        else : # regression
+            loss = self.mse_loss(y_hat, y)
         self.log('train_loss', loss)
         return loss
 
     def validation_step(self, batch, batch_idx):
         x, y = batch
         y_hat = self(x)
+        if self.classification :
+            assert len(y_hat.shape) == 2
+            class_idxs = y_hat.argmax(1) # preserve the batch dim, armax over classes
+            y_hat = class_idx_to_sig(class_idxs).unsqueeze(1)
+            y = class_idx_to_sig(y.to(torch.float32))
         mse_loss = self.mse_loss(y_hat, y)
         l1_loss = self.l1_loss(y_hat, y)
         self.log('val_mse_loss', mse_loss)
@@ -45,6 +65,11 @@ class MLP(pl.LightningModule):
     def test_step(self, batch, batch_idx):
         x, y = batch
         y_hat = self(x)
+        if self.classification :
+            assert len(y_hat.shape) == 2
+            class_idxs = y_hat.argmax(1) # preserve the batch dim, armax over classes
+            y_hat = class_idx_to_sig(class_idxs).unsqueeze(1)
+            y = class_idx_to_sig(y.to(torch.float32))
         mse_loss = self.mse_loss(y_hat, y)
         l1_loss = self.l1_loss(y_hat, y)
         self.log('test_mse_loss', mse_loss)
@@ -68,13 +93,18 @@ class MLP(pl.LightningModule):
 
 class CNN(pl.LightningModule):
     def __init__(self, lk_matrix_size: int, kernel_size: int, 
-                 layer_norm: bool, num_invariants: int = 1) :
+                 layer_norm: bool, num_invariants: int = 1,
+                 classification=False, num_classes=41) :
         super(CNN, self).__init__()
 
         self.layer_norm = layer_norm
+        self.classification = classification
+        self.num_classes = num_classes
 
         self.mse_loss = nn.MSELoss()
         self.l1_loss = nn.L1Loss()
+        if classification :
+            self.cross_entropy = nn.CrossEntropyLoss()
 
         self.relu = nn.ReLU()
 
@@ -126,16 +156,29 @@ class CNN(pl.LightningModule):
 
         return x
 
+    def class_idx_to_sig(idx) :
+        max_min_sig = (self.num_classes-1)/2
+        idx[idx > max_min_sig] = -1*(idx[idx>max_min_sig] - max_min_sig)
+        return idx
+
     def training_step(self, batch, batch_idx):
         x, y = batch
         y_hat = self(x)
-        loss = self.mse_loss(y_hat, y)
+        if self.classification :
+            loss = self.cross_entropy(y_hat, y)
+        else : # regression
+            loss = self.mse_loss(y_hat, y)
         self.log('train_loss', loss)
         return loss
 
     def validation_step(self, batch, batch_idx):
         x, y = batch
         y_hat = self(x)
+        if self.classification :
+            assert len(y_hat.shape) == 2
+            class_idxs = y_hat.argmax(1) # preserve the batch dim, armax over classes
+            y_hat = class_idx_to_sig(class_idxs).unsqueeze(1)
+            y = class_idx_to_sig(y.to(torch.float32))
         mse_loss = self.mse_loss(y_hat, y)
         l1_loss = self.l1_loss(y_hat, y)
         self.log('val_mse_loss', mse_loss)
@@ -144,6 +187,11 @@ class CNN(pl.LightningModule):
     def test_step(self, batch, batch_idx):
         x, y = batch
         y_hat = self(x)
+        if self.classification :
+            assert len(y_hat.shape) == 2
+            class_idxs = y_hat.argmax(1) # preserve the batch dim, armax over classes
+            y_hat = class_idx_to_sig(class_idxs).unsqueeze(1)
+            y = class_idx_to_sig(y.to(torch.float32))
         mse_loss = self.mse_loss(y_hat, y)
         l1_loss = self.l1_loss(y_hat, y)
         self.log('test_mse_loss', mse_loss)
@@ -165,8 +213,9 @@ class CNN(pl.LightningModule):
 
 
 class TransformerEncoder(nn.Module):
-    def __init__(self, vocab_size, d_model, nhead, num_encoder_layers, dim_feedforward, max_seq_length):
-        super(TokenPredictor, self).__init__()
+    def __init__(self, vocab_size, d_model, nhead, num_encoder_layers, 
+                 dim_feedforward, max_seq_length):
+        super(TransformerEncoder, self).__init__()
         
         self.d_model = d_model
         self.embed = nn.Embedding(vocab_size, d_model)
@@ -199,7 +248,7 @@ class TransformerEncoder(nn.Module):
         return output.squeeze(-1)
 
 class PositionalEncoding(nn.Module):
-    def __init__(self, d_model, max_len=5000):
+    def __init__(self, d_model, max_len):
         super(PositionalEncoding, self).__init__()
         
         pe = torch.zeros(max_len, d_model)
