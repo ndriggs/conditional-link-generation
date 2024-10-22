@@ -2,10 +2,11 @@ import torch
 import torch.nn as nn
 import lightning as pl
 from torch.optim.lr_scheduler import ExponentialLR
+import math
 
 class MLP(pl.LightningModule):
-    def __init__(self, lk_matrix_size, hidden_size, num_invariants, 
-                 dropout):
+    def __init__(self, lk_matrix_size, hidden_size, 
+                 dropout, num_invariants=1):
         super(MLP, self).__init__()
 
         self.mse_loss = nn.MSELoss()
@@ -67,7 +68,7 @@ class MLP(pl.LightningModule):
 
 class CNN(pl.LightningModule):
     def __init__(self, lk_matrix_size: int, kernel_size: int, 
-                 layer_norm: bool, num_invariants: int) :
+                 layer_norm: bool, num_invariants: int = 1) :
         super(CNN, self).__init__()
 
         self.layer_norm = layer_norm
@@ -161,3 +162,55 @@ class CNN(pl.LightningModule):
                 "name": f"{self.lr_schedule}_lr"
             }
         }
+
+
+class TransformerEncoder(nn.Module):
+    def __init__(self, vocab_size, d_model, nhead, num_encoder_layers, dim_feedforward, max_seq_length):
+        super(TokenPredictor, self).__init__()
+        
+        self.d_model = d_model
+        self.embed = nn.Embedding(vocab_size, d_model)
+        self.pos_encoder = PositionalEncoding(d_model, max_seq_length)
+        
+        encoder_layers = nn.TransformerEncoderLayer(d_model, nhead, dim_feedforward)
+        self.transformer_encoder = nn.TransformerEncoder(encoder_layers, num_encoder_layers)
+        
+        self.final_layer = nn.Linear(d_model, 1)
+
+    def forward(self, src):
+        # src shape: (seq_len, batch_size)
+        
+        # Embed the input tokens
+        src = self.embed(src) * math.sqrt(self.d_model)
+        
+        # Add positional encoding
+        src = self.pos_encoder(src)
+        
+        # Pass through the transformer encoder
+        output = self.transformer_encoder(src)
+        
+        # Take the mean of the sequence dimension
+        output = output.mean(dim=0)
+        
+        # Pass through the final linear layer
+        output = self.final_layer(output)
+        
+        # Squeeze to get a single value
+        return output.squeeze(-1)
+
+class PositionalEncoding(nn.Module):
+    def __init__(self, d_model, max_len=5000):
+        super(PositionalEncoding, self).__init__()
+        
+        pe = torch.zeros(max_len, d_model)
+        position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
+        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+        
+        pe[:, 0::2] = torch.sin(position * div_term)
+        pe[:, 1::2] = torch.cos(position * div_term)
+        
+        pe = pe.unsqueeze(0).transpose(0, 1)
+        self.register_buffer('pe', pe)
+
+    def forward(self, x):
+        return x + self.pe[:x.size(0), :]
