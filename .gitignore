@@ -1,1 +1,7 @@
 __pycache__/
+*.npy
+*.txt
+*.out
+*.pkl
+*.zip
+predicting_signature/generate_dataset.sh
