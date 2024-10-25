@@ -67,7 +67,7 @@ for braid_word_length in range(2, 46) :
         lk_rep = braid_word_to_lk_rep(braid_word)
         sig = Link(B([Integer(sigma) for sigma in braid_word])).signature()
         lk_reps.append(list(lk_rep.flatten()) + [sig])
-        braid_words.append(braid_word)
+        braid_words.append(list(braid_word))
     for _ in range(braid_word_length*40) :
         sigma = np.random.choice(generators)
         braid_word = [sigma]
@@ -86,8 +86,15 @@ for braid_word_length in range(2, 46) :
         braid_words.append(braid_word)
 
 lk_reps = np.array(lk_reps)
-
 np.save('lk_and_sig.npy', lk_reps)
 
+# work around, courtesy of 
+# https://stackoverflow.com/questions/50916422/python-typeerror-object-of-type-int64-is-not-json-serializable
+class NpEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        return super(NpEncoder, self).default(obj)
+
 with open("braid_words.txt", 'w') as f:
-    json.dump(braid_words, f)
+    json.dump(braid_words, f, cls=NpEncoder)
