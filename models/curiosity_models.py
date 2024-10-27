@@ -9,7 +9,7 @@ import math
 
 class MLP(pl.LightningModule):
     def __init__(self, lk_matrix_size, hidden_size, 
-                 dropout, num_invariants=1, classification=False, num_classes=41):
+                 dropout, num_invariants=1, classification=False, num_classes=77):
         super(MLP, self).__init__()
 
         self.classification = classification
@@ -96,7 +96,7 @@ class MLP(pl.LightningModule):
 class CNN(pl.LightningModule):
     def __init__(self, lk_matrix_size: int, kernel_size: int, 
                  layer_norm: bool, num_invariants: int = 1,
-                 classification=False, num_classes=41) :
+                 classification=False, num_classes=77) :
         super(CNN, self).__init__()
 
         self.layer_norm = layer_norm
@@ -220,7 +220,7 @@ class CNN(pl.LightningModule):
 class TransformerEncoder(pl.LightningModule):
     def __init__(self, vocab_size, d_model, nhead, num_encoder_layers, 
                  dim_feedforward, max_seq_length, classification=False,
-                 num_classes=41):
+                 num_classes=77):
         super(TransformerEncoder, self).__init__()
 
         self.classification = classification
@@ -243,8 +243,9 @@ class TransformerEncoder(pl.LightningModule):
         else : # regression
             self.final_layer = nn.Linear(d_model, 1)
 
-    def forward(self, src):
-        # src shape: (seq_len, batch_size)
+    def forward(self, src_and_lengths):
+        src, src_lengths = src_and_lengths
+        # src shape: (batch_size, seq_len)
         
         # Embed the input tokens
         src = self.embed(src) * math.sqrt(self.d_model)
@@ -252,8 +253,14 @@ class TransformerEncoder(pl.LightningModule):
         # Add positional encoding
         src = self.pos_encoder(src)
         
+        # Transpose to (seq_len, batch_size, d_model) for transformer
+        src = src.transpose(0, 1)
+        
+        # Create mask based on src_lengths
+        src_key_padding_mask = (torch.arange(src.size(0)).unsqueeze(0) >= src_lengths.unsqueeze(1)).to(src.device)
+        
         # Pass through the transformer encoder
-        output = self.transformer_encoder(src)
+        output = self.transformer_encoder(src, src_key_padding_mask=src_key_padding_mask)
         
         # Take the mean of the sequence dimension
         output = output.mean(dim=0)
@@ -343,7 +350,7 @@ class PositionalEncoding(nn.Module):
 class Reformer(pl.LightningModule) :
     def __init__(self, vocab_size, d_model, nhead, num_layers
                  max_seq_len, classification=False,
-                 num_classes=41):
+                 num_classes=77):
         super(Reformer, self).__init__()
 
         self.classification = classification
@@ -357,15 +364,16 @@ class Reformer(pl.LightningModule) :
 
         self.reformer = ReformerLM(vocab_size, d_model, num_layers, max_seq_len=max_seq_len, 
                                    heads = nhead, causal = False, use_full_attn = True,  
-                                   return_embeddings = not classification, axial_position_emb = True)
+                                   return_embeddings = True, axial_position_emb = True)
 
-        if not self.classification : 
+        if self.classification : 
+            self.fc = nn.Linear(d_model, num_classes)
+        else : 
             self.fc = nn.Linear(d_model, 1)
 
     def forward(self, x) :
         x = self.reformer(x)
-        if not self.classification :
-            x = self.fc(x)
+        x = self.fc(x)
         return x
 
     def class_idx_to_sig(idx) :
