@@ -4,5 +4,5 @@ __pycache__/
 *.out
 *.pkl
 *.zip
-predicting_signature/generate_dataset.sh
+*.sh
 *.egg-info
