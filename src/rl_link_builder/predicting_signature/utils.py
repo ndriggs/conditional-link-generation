@@ -1,12 +1,13 @@
 from torch.utils.data import Dataset
 from torch.nn.utils.rnn import pad_sequence
 from torch_geometric.data import Data
+from torch_geometric.loader import DataLoader
 import torch
 import numpy as np
 from typing import Union
 import json
 
-def load_braid_words(train_test_or_val: str)
+def load_braid_words(train_test_or_val: str):
     with open(f'braid_{train_test_or_val}.txt', 'r') as f :
         braid_words = json.load(f)
     return braid_words
@@ -51,10 +52,15 @@ def pad_braid_words(braid_words, pad_value=0):
     
     return padded_seqs, lengths_tensor
 
-def braid_word_to_geom_data(braid_word, ohe_inverses: bool) :
+def braid_word_to_geom_data(braid_word, y, ohe_inverses: bool) :
     '''Converts a braid word (as a list of integers) to a torch_geometric.data.Data object
     containing node features and adjacency list information
-    
+
+    parameters: 
+    braid_word: braid word as a list 
+
+    y: the target invariant value(s)
+
     ohe_inverses: if True then one-hot-encodes all generators for node features. If False 
     then only one-hot-encodes the positive sigmas and uses -1 in the appropriate spot for 
     their inverses. e.g. if the braid index was 4 and ohe_inverses = True, then sigma_1 = 
@@ -69,19 +75,24 @@ def braid_word_to_geom_data(braid_word, ohe_inverses: bool) :
         edges.append([i+1, i])
 
     # construct the node features, with each generator in the braid word as a node
-    braid_word = np.array(braid_word)
+    braid_word = torch.tensor(braid_word)
     braid_index = 7
     if ohe_inverses :
         # move the negative sigmas to the spots after the positive ones
         # convert -1 to 7, -2 to 8, -3 to 9, etc. 
-        braid_word = np.abs(braid_word) + (1-np.sign(braid_word))*((braid_index-1)/2)
-        node_features = np.zeros((len(braid_word),(braid_index-1)*2))
-        node_features[np.arange(len(braid_word)),braid_word-1] = 1
+        braid_word = torch.abs(braid_word) + (1-torch.sign(braid_word))*((braid_index-1)/2)
+        node_features = torch.zeros((len(braid_word),(braid_index-1)*2))
+        node_features[torch.arange(len(braid_word)),braid_word-1] = 1.0
     else : 
-        node_features = np.zeros((len(braid_word),braid_index-1))
-        node_features[np.arange(len(braid_word)),np.abs(braid_word)-1] = np.sign(braid_word)
+        node_features = torch.zeros((len(braid_word),braid_index-1))
+        node_features[torch.arange(len(braid_word)),torch.abs(braid_word)-1] = torch.sign(braid_word).to(torch.float32)
 
+    # now return the graph Data object
+    return Data(x=node_features, edge_index=torch.LongTensor(edges).t(), y=torch.tensor(y))
 
+def get_graph_dataloader(braid_words, targets, ohe_inverses:bool, batch_size:int, shuffle:bool) :
+    data_list = [braid_word_to_geom_data(braid_word, y, ohe_inverses) for braid_word, y in zip(braid_words, targets)]
+    return DataLoader(data_list, batch_size=batch_size, shuffle=shuffle)
 
 
 class BraidDataset(Dataset):
@@ -111,3 +122,30 @@ class BraidDataset(Dataset):
             return (self.data[idx], self.seq_lengths[idx]), self.targets[idx]
         else :
             return self.data[idx], self.targets[idx]
+
+
+def make_experiment_name(args) :
+    '''Returns a unique experiment name string based on hyperparameters'''
+    model = args.model[:3]
+    
+    task = 'cls' if args.classification else 'reg'
+    
+    preproc = args.preprocessing 
+    if preproc == 'remove_cancelations' :
+        preproc = 'rm'
+    elif preproc is None :
+        preproc = ''
+    
+    if args.model == 'mlp' : 
+        return f'{model}_{preproc}_{task}_h{args.hidden_size}_d{args.dropout}'
+
+    elif args.model == 'cnn' :
+        ln = 'ln' if args.layer_norm else ''
+        return f'{model}_{preproc}_{task}_k{args.kernel_size}_{ln}'
+
+    elif args.model in ['transformer_encoder', 'reformer'] :
+        return f'{model}_{preproc}_{task}_d{args.d_model}_h{args.nheads}_l{args.num_layers}'
+
+    elif args.model == 'gnn' :
+        ohe = 'ohe' if args.ohe_inverses else 'neg'
+        return f'{model}_{preproc}_{task}_l{args.num_layers}_{ohe}'

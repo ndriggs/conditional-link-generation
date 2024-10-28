@@ -4,12 +4,13 @@ import lightning as pl
 from torch.optim.lr_scheduler import ExponentialLR, LambdaLR
 from reformer_pytorch import ReformerLM
 from torch_geometric.nn import GATConv
+from utils import topk_accuracy
 import numpy as np
 import math
 
 class MLP(pl.LightningModule):
-    def __init__(self, lk_matrix_size, hidden_size, 
-                 dropout, num_invariants=1, classification=False, num_classes=77):
+    def __init__(self, hidden_size, dropout, lk_matrix_size=21, 
+                 num_invariants=1, classification=False, num_classes=77):
         super(MLP, self).__init__()
 
         self.classification = classification
@@ -22,7 +23,10 @@ class MLP(pl.LightningModule):
 
         self.fc1 = nn.Linear(lk_matrix_size**2, hidden_size)
         self.fc2 = nn.Linear(hidden_size, hidden_size)
-        self.fc3 = nn.Linear(hidden_size, num_invariants)
+        if classification :
+            self.fc3 = nn.Linear(hidden_size, num_classes)
+        else :
+            self.fc3 = nn.Linear(hidden_size, num_invariants)
 
         self.dropout = nn.Dropout(dropout)
 
@@ -36,18 +40,14 @@ class MLP(pl.LightningModule):
 
         return x
 
-    def class_idx_to_sig(idx) :
-        max_min_sig = (self.num_classes-1)/2
-        idx[idx > max_min_sig] = -1*(idx[idx>max_min_sig] - max_min_sig)
-        return idx
-
     def training_step(self, batch, batch_idx):
         x, y = batch
         y_hat = self(x)
         if self.classification :
+            y = y + ((self.num_classes - 1) / 2) # shift the signatures so they start at 0
             loss = self.cross_entropy(y_hat, y)
         else : # regression
-            loss = self.mse_loss(y_hat, y)
+            loss = self.l1_loss(y_hat, y)
         self.log('train_loss', loss)
         return loss
 
@@ -56,12 +56,11 @@ class MLP(pl.LightningModule):
         y_hat = self(x)
         if self.classification :
             assert len(y_hat.shape) == 2
-            class_idxs = y_hat.argmax(1) # preserve the batch dim, armax over classes
-            y_hat = class_idx_to_sig(class_idxs).unsqueeze(1)
-            y = class_idx_to_sig(y.to(torch.float32))
-        mse_loss = self.mse_loss(y_hat, y)
+            pred_classes = y_hat.argmax(1) # preserve the batch dim, armax over classes
+            # convert top predicted class labels to signatures, so that we can compute 
+            # regression loss 
+            y_hat = (pred_classes - ((self.num_classes - 1)/2)).unsqueeze(1)
         l1_loss = self.l1_loss(y_hat, y)
-        self.log('val_mse_loss', mse_loss)
         self.log('val_l1_loss', l1_loss)
 
     def test_step(self, batch, batch_idx):
@@ -69,12 +68,16 @@ class MLP(pl.LightningModule):
         y_hat = self(x)
         if self.classification :
             assert len(y_hat.shape) == 2
-            class_idxs = y_hat.argmax(1) # preserve the batch dim, armax over classes
-            y_hat = class_idx_to_sig(class_idxs).unsqueeze(1)
-            y = class_idx_to_sig(y.to(torch.float32))
-        mse_loss = self.mse_loss(y_hat, y)
+            # convert signatures to class ids 
+            target_classes = y + ((self.num_classes - 1) / 2)
+            top1_acc, top5_acc = topk_accuracy(y_hat, target_classes)
+            self.log('test_top1_acc', top1_acc.item())
+            self.log('test_top5_acc', top5_acc.item())
+            pred_classes = y_hat.argmax(1) # preserve the batch dim, armax over classes
+            # convert top predicted class labels to signatures, so that we can compute 
+            # regression loss 
+            y_hat = (pred_classes - ((self.num_classes - 1)/2)).unsqueeze(1)
         l1_loss = self.l1_loss(y_hat, y)
-        self.log('test_mse_loss', mse_loss)
         self.log('test_l1_loss', l1_loss)
 
     def configure_optimizers(self):
@@ -94,8 +97,8 @@ class MLP(pl.LightningModule):
 
 
 class CNN(pl.LightningModule):
-    def __init__(self, lk_matrix_size: int, kernel_size: int, 
-                 layer_norm: bool, num_invariants: int = 1,
+    def __init__(self, kernel_size: int, layer_norm: bool, 
+                 lk_matrix_size: int = 21, num_invariants: int = 1,
                  classification=False, num_classes=77) :
         super(CNN, self).__init__()
 
