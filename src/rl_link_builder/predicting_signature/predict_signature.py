@@ -4,8 +4,8 @@ import argparse
 import lightning as pl
 from lightning import Trainer
 from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
-from utils import *
-from models.curiousity_models import MLP, CNN, TransformerEncoder, Reformer, GNN
+from .utils import *
+from ..models.curiousity_models import MLP, CNN, TransformerEncoder, Reformer, GNN
 import numpy as np
 
 def parse_args():
@@ -24,6 +24,9 @@ def parse_args():
     # only applicable to cnn
     parser.add_argument('--kernel_size', type=int, default=2)
     parser.add_argument('--layer_norm', type=bool, default=True)
+    # only applicable to transformer encoder, how many times d_model should 
+    # the dimension of the feedforward should be (2-4)
+    parser.add_argument('--dim_feedforward', type=int, default=2)
     # only applicable to transformer encoder and reformer
     parser.add_argument('--d_model', type=int, default=50)
     parser.add_argument('--nheads', type=int, default=2)
@@ -37,19 +40,19 @@ def main():
     args = parse_args()
 
     # load the targets
-    train_targets = np.load('y_train.npy')
-    val_targets = np.load('y_val.npy')
-    test_targets = np.load('y_test.npy')
+    train_targets = np.load('src/rl_link_builder/predicting_signature/y_train.npy')
+    val_targets = np.load('src/rl_link_builder/predicting_signature/y_val.npy')
+    test_targets = np.load('src/rl_link_builder/predicting_signature/y_test.npy')
 
     # load the LK data or braid words
     if args.preprocessing == 'clip' :
-        train_data = np.load('clip_then_normalize_train.npy')
-        val_data = np.load('clip_then_normalize_val.npy')
-        test_data = np.load('clip_then_normalize_test.npy')
+        train_data = np.load('src/rl_link_builder/predicting_signature/clip_then_normalize_train.npy')
+        val_data = np.load('src/rl_link_builder/predicting_signature/clip_then_normalize_val.npy')
+        test_data = np.load('src/rl_link_builder/predicting_signature/clip_then_normalize_test.npy')
     elif args.preprocessing == 'log' :
-        train_data = np.load('train_log_scaled.npy')
-        val_data = np.load('val_log_scaled.npy')
-        test_data = np.load('test_log_scaled.npy')
+        train_data = np.load('src/rl_link_builder/predicting_signature/train_log_scaled.npy')
+        val_data = np.load('src/rl_link_builder/predicting_signature/val_log_scaled.npy')
+        test_data = np.load('src/rl_link_builder/predicting_signature/test_log_scaled.npy')
     elif args.preprocessing == 'remove_cancelations' :
         train_braids = remove_cancelations('train')
         val_braids = remove_cancelations('val')
@@ -88,21 +91,21 @@ def main():
 
     # create the dataloaders for all models but GNN
     if args.model in ['mlp', 'cnn', 'transformer_encoder', 'reformer'] : 
-        train_loader = DataLoader(train_dataset, batch_size=1, shuffle=True)
-        val_loader = DataLoader(val_dataset, batch_size=64, shuffle=False)
-        test_loader = DataLoader(test_dataset, batch_size=64, shuffle=False)
+        train_loader = DataLoader(train_dataset, batch_size=128, shuffle=True)
+        val_loader = DataLoader(val_dataset, batch_size=128, shuffle=False)
+        test_loader = DataLoader(test_dataset, batch_size=128, shuffle=False)
 
     # create the datasets and dataloaders for GNN
     if args.model == 'gnn' :
         train_loader = get_graph_dataloader(train_braids, train_targets, 
                                             ohe_inverses=args.ohe_inverses, 
-                                            batch_size=1, shuffle=True)
+                                            batch_size=128, shuffle=True)
         val_loader = get_graph_dataloader(val_braids, val_targets, 
                                           ohe_inverses=args.ohe_inverses, 
-                                          batch_size=64, shuffle=False)
+                                          batch_size=128, shuffle=False)
         test_loader = get_graph_dataloader(test_braids, test_targets, 
                                            ohe_inverses=args.ohe_inverses, 
-                                           batch_size=64, shuffle=False)
+                                           batch_size=128, shuffle=False)
 
     # make model 
     num_generators = 12
@@ -115,8 +118,8 @@ def main():
     elif args.model == 'transformer_encoder' :
         model = TransformerEncoder(vocab_size=num_generators+1, d_model=args.d_model, 
                                    nhead=args.nhead, num_encoder_layers=args.num_layers, 
-                                   dim_feedforward=1000, max_seq_length=45, 
-                                   classification=args.classification)
+                                   dim_feedforward=args.dim_feedforward*args.d_model, 
+                                   max_seq_length=45, classification=args.classification)
     elif args.model == 'reformer' :
         model = Reformer(vocab_size=num_generators+1, d_model=args.d_model, 
                          nhead=args.nhead, num_layers=args.num_layers, max_seq_len=45, 
@@ -125,21 +128,25 @@ def main():
     lr_monitor = LearningRateMonitor(logging_interval='epoch')
     checkpoint_callback = ModelCheckpoint(monitor="val_l1_loss")
 
-    
+    experiment_name = get_experiment_name(args)
 
     trainer = pl.Trainer(
         accelerator=args.accelerator,
         # devices=torch.cuda.device_count(),
         max_epochs=100,
         callbacks=[lr_monitor, checkpoint_callback],
-        # fast_dev_run=2, # for when testing
+        fast_dev_run=2, # for when testing
         enable_checkpointing=True, # so it returns the best model
         logger=pl.pytorch.loggers.TensorBoardLogger('logs/', name=experiment_name) 
         # max_time = "00:12:00:00",
         # num_nodes = args.num_nodes,
     )
  
-    best_model = trainer.fit(model, train_dataloader, test_dataloader)
-    trainer.test(best_model, val_dataloader)
+    best_model = trainer.fit(model, train_loader, test_loader)
+    trainer.test(best_model, val_loader)
 
     print(vars(args))
+
+
+if __name__ == '__main__':
+    main()
