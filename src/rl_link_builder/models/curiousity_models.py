@@ -1,10 +1,11 @@
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 import lightning as pl
 from torch.optim.lr_scheduler import ExponentialLR, LambdaLR
 from reformer_pytorch import ReformerLM
 from torch_geometric.nn import GATConv
-from utils import topk_accuracy
+from .utils import topk_accuracy
 import numpy as np
 import math
 
@@ -45,9 +46,9 @@ class MLP(pl.LightningModule):
         y_hat = self(x)
         if self.classification :
             y = y + ((self.num_classes - 1) / 2) # shift the signatures so they start at 0
-            loss = self.cross_entropy(y_hat, y)
+            loss = self.cross_entropy(y_hat.squeeze(1), y)
         else : # regression
-            loss = self.l1_loss(y_hat, y)
+            loss = self.l1_loss(y_hat.squeeze(1), y)
         self.log('train_loss', loss)
         return loss
 
@@ -215,7 +216,7 @@ class CNN(pl.LightningModule):
                 "scheduler": scheduler,
                 "interval": "epoch",
                 "frequency": 1,
-                "name": = "exp_lr"
+                "name": "exp_lr"
             }
         }
 
@@ -238,7 +239,7 @@ class TransformerEncoder(pl.LightningModule):
         self.embed = nn.Embedding(vocab_size, d_model)
         self.pos_encoder = PositionalEncoding(d_model, max_seq_length)
         
-        encoder_layers = nn.TransformerEncoderLayer(d_model, nhead, dim_feedforward)
+        encoder_layers = nn.TransformerEncoderLayer(d_model, nhead, dim_feedforward, dropout=0.1)
         self.transformer_encoder = nn.TransformerEncoder(encoder_layers, num_encoder_layers)
         
         if self.classification :
@@ -351,7 +352,7 @@ class PositionalEncoding(nn.Module):
         return x + self.pe[:x.size(0), :]
 
 class Reformer(pl.LightningModule) :
-    def __init__(self, vocab_size, d_model, nhead, num_layers
+    def __init__(self, vocab_size, d_model, nhead, num_layers,
                  max_seq_len, classification=False,
                  num_classes=77):
         super(Reformer, self).__init__()
@@ -439,7 +440,7 @@ class Reformer(pl.LightningModule) :
         }
 
 
-class GNN(plt.LightningModule):
+class GNN(pl.LightningModule):
     def __init__(self, hidden_channels, num_heads=2, num_layers=2, classification=False, num_classes=41):
         super(GNN, self).__init__()
         self.gat1 = GATConv(1, hidden_channels, heads=num_heads)
