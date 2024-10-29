@@ -8,7 +8,7 @@ from typing import Union
 import json
 
 def load_braid_words(train_test_or_val: str):
-    with open(f'braid_{train_test_or_val}.txt', 'r') as f :
+    with open(f'src/rl_link_builder/predicting_signature/{train_test_or_val}_braids.txt', 'r') as f :
         braid_words = json.load(f)
     return braid_words
 
@@ -124,7 +124,7 @@ class BraidDataset(Dataset):
             return self.data[idx], self.targets[idx]
 
 
-def make_experiment_name(args) :
+def get_experiment_name(args) :
     '''Returns a unique experiment name string based on hyperparameters'''
     model = args.model[:3]
     
