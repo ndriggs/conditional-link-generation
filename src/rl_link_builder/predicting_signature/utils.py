@@ -28,10 +28,11 @@ def remove_cancelations(train_test_or_val: str) :
             else:
                 stack.append(generator)
         # remove all inverses at the front and back
-        while stack[0] + stack[-1] == 0 :
-            stack = stack[1:-1]
-
-        braid_words[i] = stack
+        if len(stack) > 1 :
+            while stack[0] + stack[-1] == 0 :
+                stack = stack[1:-1]
+        if len(stack) > 1 :
+            braid_words[i] = stack
     
     return braid_words
 
@@ -40,6 +41,14 @@ def pad_braid_words(braid_words, pad_value=0):
 
     # get lengths of braid words
     lengths = [len(braid_word) for braid_word in braid_words]
+
+    # convert the generators to tokens
+    # sigma_{1} = 1, sigma_{6} = 6, simga_{-1} = 7, sigma_{-2} = 8, etc.
+    braid_index = 7
+    for i, braid_word in enumerate(braid_words) : 
+        braid_word = np.array(braid_word)
+        braid_word = np.abs(braid_word) + (1-np.sign(braid_word))*((braid_index-1)/2)
+        braid_words[i] = braid_word
 
     # convert braid words to torch tensors
     tensor_seqs = [torch.LongTensor(braid_word) for braid_word in braid_words]
@@ -70,9 +79,10 @@ def braid_word_to_geom_data(braid_word, y, ohe_inverses: bool) :
     # initialize edges with the edge between the first and last generator in the braid word
     edges = [[0, len(braid_word)-1], [len(braid_word)-1, 0]]
     # add an edge between all adjacent spots in the braid word
-    for i in range(len(braid_word)-1) :
-        edges.append([i, i+1])
-        edges.append([i+1, i])
+    if len(braid_word) > 2 :
+        for i in range(len(braid_word)-1) :
+            edges.append([i, i+1])
+            edges.append([i+1, i])
 
     # construct the node features, with each generator in the braid word as a node
     braid_word = torch.tensor(braid_word)

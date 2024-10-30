@@ -28,7 +28,7 @@ def parse_args():
     # the dimension of the feedforward should be (2-4)
     parser.add_argument('--dim_feedforward', type=int, default=2)
     # only applicable to transformer encoder and reformer
-    parser.add_argument('--d_model', type=int, default=50)
+    parser.add_argument('--d_model', type=int, default=32)
     parser.add_argument('--nheads', type=int, default=2)
     # only applicable to transformer encoder, reformer, and gnn
     parser.add_argument('--num_layers', type=int, default=None)
@@ -78,7 +78,7 @@ def main():
         train_padded, train_lengths = pad_braid_words(train_braids)
         val_padded, val_lengths = pad_braid_words(val_braids)
         test_padded, test_lengths = pad_braid_words(test_braids)
-
+    if args.model in ['transformer_encoder', 'reformer'] :
         train_dataset = BraidDataset(data=train_padded, targets=train_targets, 
                                      classification=args.classification,
                                      seq_lengths=train_lengths)
@@ -117,12 +117,12 @@ def main():
                     classification=args.classification)
     elif args.model == 'transformer_encoder' :
         model = TransformerEncoder(vocab_size=num_generators+1, d_model=args.d_model, 
-                                   nhead=args.nhead, num_encoder_layers=args.num_layers, 
+                                   nhead=args.nheads, num_encoder_layers=args.num_layers, 
                                    dim_feedforward=args.dim_feedforward*args.d_model, 
-                                   max_seq_length=45, classification=args.classification)
+                                   max_seq_length=46, classification=args.classification)
     elif args.model == 'reformer' :
         model = Reformer(vocab_size=num_generators+1, d_model=args.d_model, 
-                         nhead=args.nhead, num_layers=args.num_layers, max_seq_len=45, 
+                         nhead=args.nheads, num_layers=args.num_layers, max_seq_len=46, 
                          classification=args.classification)
 
     lr_monitor = LearningRateMonitor(logging_interval='epoch')
@@ -133,9 +133,9 @@ def main():
     trainer = pl.Trainer(
         accelerator=args.accelerator,
         # devices=torch.cuda.device_count(),
-        max_epochs=100,
+        max_epochs=1,
         callbacks=[lr_monitor, checkpoint_callback],
-        fast_dev_run=2, # for when testing
+        # fast_dev_run=2, # for when testing
         enable_checkpointing=True, # so it returns the best model
         logger=pl.pytorch.loggers.TensorBoardLogger('logs/', name=experiment_name) 
         # max_time = "00:12:00:00",
@@ -143,7 +143,7 @@ def main():
     )
  
     best_model = trainer.fit(model, train_loader, test_loader)
-    trainer.test(best_model, val_loader)
+    trainer.test(best_model, val_loader, ckpt_path='best')
 
     print(vars(args))
 

@@ -17,7 +17,6 @@ class MLP(pl.LightningModule):
         self.classification = classification
         self.num_classes = num_classes
 
-        self.mse_loss = nn.MSELoss()
         self.l1_loss = nn.L1Loss()
         if classification :
             self.cross_entropy = nn.CrossEntropyLoss(label_smoothing=0.1)
@@ -45,7 +44,7 @@ class MLP(pl.LightningModule):
         x, y = batch
         y_hat = self(x)
         if self.classification :
-            y = y + ((self.num_classes - 1) / 2) # shift the signatures so they start at 0
+            y = (y + ((self.num_classes - 1) / 2)).to(torch.int64) # shift the signatures so they start at 0
             loss = self.cross_entropy(y_hat.squeeze(1), y)
         else : # regression
             loss = self.l1_loss(y_hat.squeeze(1), y)
@@ -61,7 +60,7 @@ class MLP(pl.LightningModule):
             # convert top predicted class labels to signatures, so that we can compute 
             # regression loss 
             y_hat = (pred_classes - ((self.num_classes - 1)/2)).unsqueeze(1)
-        l1_loss = self.l1_loss(y_hat, y)
+        l1_loss = self.l1_loss(y_hat.squeeze(1), y)
         self.log('val_l1_loss', l1_loss)
 
     def test_step(self, batch, batch_idx):
@@ -70,7 +69,7 @@ class MLP(pl.LightningModule):
         if self.classification :
             assert len(y_hat.shape) == 2
             # convert signatures to class ids 
-            target_classes = y + ((self.num_classes - 1) / 2)
+            target_classes = (y + ((self.num_classes - 1) / 2)).to(torch.int64)
             top1_acc, top5_acc = topk_accuracy(y_hat, target_classes)
             self.log('test_top1_acc', top1_acc.item())
             self.log('test_top5_acc', top5_acc.item())
@@ -78,7 +77,7 @@ class MLP(pl.LightningModule):
             # convert top predicted class labels to signatures, so that we can compute 
             # regression loss 
             y_hat = (pred_classes - ((self.num_classes - 1)/2)).unsqueeze(1)
-        l1_loss = self.l1_loss(y_hat, y)
+        l1_loss = self.l1_loss(y_hat.squeeze(1), y)
         self.log('test_l1_loss', l1_loss)
 
     def configure_optimizers(self):
@@ -107,7 +106,6 @@ class CNN(pl.LightningModule):
         self.classification = classification
         self.num_classes = num_classes
 
-        self.mse_loss = nn.MSELoss()
         self.l1_loss = nn.L1Loss()
         if classification :
             self.cross_entropy = nn.CrossEntropyLoss(label_smoothing=0.1)
@@ -165,18 +163,14 @@ class CNN(pl.LightningModule):
 
         return x
 
-    def class_idx_to_sig(idx) :
-        max_min_sig = (self.num_classes-1)/2
-        idx[idx > max_min_sig] = -1*(idx[idx>max_min_sig] - max_min_sig)
-        return idx
-
     def training_step(self, batch, batch_idx):
         x, y = batch
         y_hat = self(x)
         if self.classification :
-            loss = self.cross_entropy(y_hat, y)
+            y = (y + ((self.num_classes - 1) / 2)).to(torch.int64) # shift the signatures so they start at 0
+            loss = self.cross_entropy(y_hat.squeeze(1), y)
         else : # regression
-            loss = self.mse_loss(y_hat, y)
+            loss = self.l1_loss(y_hat.squeeze(1), y)
         self.log('train_loss', loss)
         return loss
 
@@ -185,12 +179,11 @@ class CNN(pl.LightningModule):
         y_hat = self(x)
         if self.classification :
             assert len(y_hat.shape) == 2
-            class_idxs = y_hat.argmax(1) # preserve the batch dim, armax over classes
-            y_hat = class_idx_to_sig(class_idxs).unsqueeze(1)
-            y = class_idx_to_sig(y.to(torch.float32))
-        mse_loss = self.mse_loss(y_hat, y)
-        l1_loss = self.l1_loss(y_hat, y)
-        self.log('val_mse_loss', mse_loss)
+            pred_classes = y_hat.argmax(1) # preserve the batch dim, armax over classes
+            # convert top predicted class labels to signatures, so that we can compute 
+            # regression loss 
+            y_hat = (pred_classes - ((self.num_classes - 1)/2)).unsqueeze(1)
+        l1_loss = self.l1_loss(y_hat.squeeze(1), y)
         self.log('val_l1_loss', l1_loss)
 
     def test_step(self, batch, batch_idx):
@@ -198,12 +191,16 @@ class CNN(pl.LightningModule):
         y_hat = self(x)
         if self.classification :
             assert len(y_hat.shape) == 2
-            class_idxs = y_hat.argmax(1) # preserve the batch dim, armax over classes
-            y_hat = class_idx_to_sig(class_idxs).unsqueeze(1)
-            y = class_idx_to_sig(y.to(torch.float32))
-        mse_loss = self.mse_loss(y_hat, y)
-        l1_loss = self.l1_loss(y_hat, y)
-        self.log('test_mse_loss', mse_loss)
+            # convert signatures to class ids 
+            target_classes = (y + ((self.num_classes - 1) / 2)).to(torch.int64)
+            top1_acc, top5_acc = topk_accuracy(y_hat, target_classes)
+            self.log('test_top1_acc', top1_acc.item())
+            self.log('test_top5_acc', top5_acc.item())
+            pred_classes = y_hat.argmax(1) # preserve the batch dim, armax over classes
+            # convert top predicted class labels to signatures, so that we can compute 
+            # regression loss 
+            y_hat = (pred_classes - ((self.num_classes - 1)/2)).unsqueeze(1)
+        l1_loss = self.l1_loss(y_hat.squeeze(1), y)
         self.log('test_l1_loss', l1_loss)
 
     def configure_optimizers(self):
@@ -224,13 +221,13 @@ class CNN(pl.LightningModule):
 class TransformerEncoder(pl.LightningModule):
     def __init__(self, vocab_size, d_model, nhead, num_encoder_layers, 
                  dim_feedforward, max_seq_length, classification=False,
-                 num_classes=77):
+                 num_classes=77, warmup_steps=4000):
         super(TransformerEncoder, self).__init__()
 
         self.classification = classification
         self.num_classes = num_classes
+        self.warmup_steps = warmup_steps
 
-        self.mse_loss = nn.MSELoss()
         self.l1_loss = nn.L1Loss()
         if classification :
             self.cross_entropy = nn.CrossEntropyLoss(label_smoothing=0.1)
@@ -253,6 +250,7 @@ class TransformerEncoder(pl.LightningModule):
         
         # Embed the input tokens
         src = self.embed(src) * math.sqrt(self.d_model)
+        # now (batch_size, seq_len, d_model)
         
         # Add positional encoding
         src = self.pos_encoder(src)
@@ -275,18 +273,14 @@ class TransformerEncoder(pl.LightningModule):
         # Squeeze to get a single value
         return output.squeeze(-1)
 
-    def class_idx_to_sig(idx) :
-        max_min_sig = (self.num_classes-1)/2
-        idx[idx > max_min_sig] = -1*(idx[idx>max_min_sig] - max_min_sig)
-        return idx
-
     def training_step(self, batch, batch_idx):
         x, y = batch
         y_hat = self(x)
         if self.classification :
-            loss = self.cross_entropy(y_hat, y)
+            y = (y + ((self.num_classes - 1) / 2)).to(torch.int64) # shift the signatures so they start at 0
+            loss = self.cross_entropy(y_hat.squeeze(1), y)
         else : # regression
-            loss = self.mse_loss(y_hat, y)
+            loss = self.l1_loss(y_hat, y)
         self.log('train_loss', loss)
         return loss
 
@@ -295,12 +289,11 @@ class TransformerEncoder(pl.LightningModule):
         y_hat = self(x)
         if self.classification :
             assert len(y_hat.shape) == 2
-            class_idxs = y_hat.argmax(1) # preserve the batch dim, armax over classes
-            y_hat = class_idx_to_sig(class_idxs).unsqueeze(1)
-            y = class_idx_to_sig(y.to(torch.float32))
-        mse_loss = self.mse_loss(y_hat, y)
+            pred_classes = y_hat.argmax(1) # preserve the batch dim, armax over classes
+            # convert top predicted class labels to signatures, so that we can compute 
+            # regression loss 
+            y_hat = (pred_classes - ((self.num_classes - 1)/2))
         l1_loss = self.l1_loss(y_hat, y)
-        self.log('val_mse_loss', mse_loss)
         self.log('val_l1_loss', l1_loss)
 
     def test_step(self, batch, batch_idx):
@@ -308,12 +301,16 @@ class TransformerEncoder(pl.LightningModule):
         y_hat = self(x)
         if self.classification :
             assert len(y_hat.shape) == 2
-            class_idxs = y_hat.argmax(1) # preserve the batch dim, armax over classes
-            y_hat = class_idx_to_sig(class_idxs).unsqueeze(1)
-            y = class_idx_to_sig(y.to(torch.float32))
-        mse_loss = self.mse_loss(y_hat, y)
+            # convert signatures to class ids 
+            target_classes = (y + ((self.num_classes - 1) / 2)).to(torch.int64)
+            top1_acc, top5_acc = topk_accuracy(y_hat, target_classes)
+            self.log('test_top1_acc', top1_acc.item())
+            self.log('test_top5_acc', top5_acc.item())
+            pred_classes = y_hat.argmax(1) # preserve the batch dim, armax over classes
+            # convert top predicted class labels to signatures, so that we can compute 
+            # regression loss 
+            y_hat = (pred_classes - ((self.num_classes - 1)/2))
         l1_loss = self.l1_loss(y_hat, y)
-        self.log('test_mse_loss', mse_loss)
         self.log('test_l1_loss', l1_loss)
 
     def configure_optimizers(self):
@@ -345,23 +342,25 @@ class PositionalEncoding(nn.Module):
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
         
-        pe = pe.unsqueeze(0).transpose(0, 1)
+        # pe = pe.unsqueeze(0).transpose(0, 1)
         self.register_buffer('pe', pe)
 
     def forward(self, x):
-        return x + self.pe[:x.size(0), :]
+        # repeat the positional encoding (originally (max_len, d_model)) along 
+        # the batch dimension
+        return x + self.pe[:x.size(1), :].unsqueeze(0).repeat(x.size(0), 1, 1)
 
 class Reformer(pl.LightningModule) :
     def __init__(self, vocab_size, d_model, nhead, num_layers,
                  max_seq_len, classification=False,
-                 num_classes=77):
+                 num_classes=77, warmup_steps=4000):
         super(Reformer, self).__init__()
 
         self.classification = classification
         self.num_classes = num_classes
         self.d_model = d_model
+        self.warmup_steps = warmup_steps
 
-        self.mse_loss = nn.MSELoss()
         self.l1_loss = nn.L1Loss()
         if classification :
             self.cross_entropy = nn.CrossEntropyLoss(label_smoothing=0.1)
@@ -375,23 +374,20 @@ class Reformer(pl.LightningModule) :
         else : 
             self.fc = nn.Linear(d_model, 1)
 
-    def forward(self, x) :
+    def forward(self, x_and_lengths) :
+        x, lengths = x_and_lengths # originally a tuple is passed in 
         x = self.reformer(x)
-        x = self.fc(x)
+        x = self.fc(x[torch.arange(x.shape[0]),lengths-1,:])
         return x
-
-    def class_idx_to_sig(idx) :
-        max_min_sig = (self.num_classes-1)/2
-        idx[idx > max_min_sig] = -1*(idx[idx>max_min_sig] - max_min_sig)
-        return idx
 
     def training_step(self, batch, batch_idx):
         x, y = batch
         y_hat = self(x)
         if self.classification :
-            loss = self.cross_entropy(y_hat, y)
+            y = (y + ((self.num_classes - 1) / 2)).to(torch.int64) # shift the signatures so they start at 0
+            loss = self.cross_entropy(y_hat.squeeze(1), y)
         else : # regression
-            loss = self.mse_loss(y_hat, y)
+            loss = self.l1_loss(y_hat.squeeze(1), y)
         self.log('train_loss', loss)
         return loss
 
@@ -400,12 +396,11 @@ class Reformer(pl.LightningModule) :
         y_hat = self(x)
         if self.classification :
             assert len(y_hat.shape) == 2
-            class_idxs = y_hat.argmax(1) # preserve the batch dim, armax over classes
-            y_hat = class_idx_to_sig(class_idxs).unsqueeze(1)
-            y = class_idx_to_sig(y.to(torch.float32))
-        mse_loss = self.mse_loss(y_hat, y)
-        l1_loss = self.l1_loss(y_hat, y)
-        self.log('val_mse_loss', mse_loss)
+            pred_classes = y_hat.argmax(1) # preserve the batch dim, armax over classes
+            # convert top predicted class labels to signatures, so that we can compute 
+            # regression loss 
+            y_hat = (pred_classes - ((self.num_classes - 1)/2)).unsqueeze(1)
+        l1_loss = self.l1_loss(y_hat.squeeze(1), y)
         self.log('val_l1_loss', l1_loss)
 
     def test_step(self, batch, batch_idx):
@@ -413,12 +408,16 @@ class Reformer(pl.LightningModule) :
         y_hat = self(x)
         if self.classification :
             assert len(y_hat.shape) == 2
-            class_idxs = y_hat.argmax(1) # preserve the batch dim, armax over classes
-            y_hat = class_idx_to_sig(class_idxs).unsqueeze(1)
-            y = class_idx_to_sig(y.to(torch.float32))
-        mse_loss = self.mse_loss(y_hat, y)
-        l1_loss = self.l1_loss(y_hat, y)
-        self.log('test_mse_loss', mse_loss)
+            # convert signatures to class ids 
+            target_classes = (y + ((self.num_classes - 1) / 2)).to(torch.int64)
+            top1_acc, top5_acc = topk_accuracy(y_hat, target_classes)
+            self.log('test_top1_acc', top1_acc.item())
+            self.log('test_top5_acc', top5_acc.item())
+            pred_classes = y_hat.argmax(1) # preserve the batch dim, armax over classes
+            # convert top predicted class labels to signatures, so that we can compute 
+            # regression loss 
+            y_hat = (pred_classes - ((self.num_classes - 1)/2)).unsqueeze(1)
+        l1_loss = self.l1_loss(y_hat.squeeze(1), y)
         self.log('test_l1_loss', l1_loss)
 
     def configure_optimizers(self):
