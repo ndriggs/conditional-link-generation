@@ -78,7 +78,8 @@ for braid_word_length in range(2, 46) :
             probabilities[generators.index(sigma)] = 0.5
             sigma = np.random.choice(generators, p=probabilities)
             braid_word.append(sigma)
-            if np.random.uniform() <= insert_opp_prob :
+            # here's where I accidentally make it one longer than braid_word_length sometimes
+            if np.random.uniform() <= insert_opp_prob : # should have: "and len(braid_word) < braid_word_length"
                 braid_word.append(-1*np.sign(sigma)*np.random.randint(1,braid_index))
         lk_rep = braid_word_to_lk_rep(braid_word)
         sig = Link(B([Integer(sigma) for sigma in braid_word])).signature()
