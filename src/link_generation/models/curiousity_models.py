@@ -49,7 +49,7 @@ class NaiveModel(pl.LightningModule):
         self.log('test_l1_loss', l1_loss)
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.parameters(), lr=.001)
+        optimizer = torch.optim.Adam(self.parameters(), lr=.01)
         scheduler = ExponentialLR(optimizer, gamma=0.95)
         
         return {
