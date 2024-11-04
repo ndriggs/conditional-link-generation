@@ -18,7 +18,7 @@ def parse_args():
     # whether to treat each distinct signature as a separate category or as a continuous value 
     parser.add_argument('--classification', type=bool, default=False)
     parser.add_argument('--accelerator', type=str, default='cuda')
-    # only applicable to mlp
+    # applicable to mlp and gnn
     parser.add_argument('--hidden_size', type=int, default=100)
     parser.add_argument('--dropout', type=float, default=0.3)
     # only applicable to cnn
@@ -40,19 +40,19 @@ def main():
     args = parse_args()
 
     # load the targets
-    train_targets = np.load('src/rl_link_builder/predicting_signature/y_train.npy')
-    val_targets = np.load('src/rl_link_builder/predicting_signature/y_val.npy')
-    test_targets = np.load('src/rl_link_builder/predicting_signature/y_test.npy')
+    train_targets = np.load('src/link_generation/predicting_signature/y_train.npy')
+    val_targets = np.load('src/link_generation/predicting_signature/y_val.npy')
+    test_targets = np.load('src/link_generation/predicting_signature/y_test.npy')
 
     # load the LK data or braid words
     if args.preprocessing == 'clip' :
-        train_data = np.load('src/rl_link_builder/predicting_signature/clip_then_normalize_train.npy')
-        val_data = np.load('src/rl_link_builder/predicting_signature/clip_then_normalize_val.npy')
-        test_data = np.load('src/rl_link_builder/predicting_signature/clip_then_normalize_test.npy')
+        train_data = np.load('src/link_generation/predicting_signature/clip_then_normalize_train.npy')
+        val_data = np.load('src/link_generation/predicting_signature/clip_then_normalize_val.npy')
+        test_data = np.load('src/link_generation/predicting_signature/clip_then_normalize_test.npy')
     elif args.preprocessing == 'log' :
-        train_data = np.load('src/rl_link_builder/predicting_signature/train_log_scaled.npy')
-        val_data = np.load('src/rl_link_builder/predicting_signature/val_log_scaled.npy')
-        test_data = np.load('src/rl_link_builder/predicting_signature/test_log_scaled.npy')
+        train_data = np.load('src/link_generation/predicting_signature/train_log_scaled.npy')
+        val_data = np.load('src/link_generation/predicting_signature/val_log_scaled.npy')
+        test_data = np.load('src/link_generation/predicting_signature/test_log_scaled.npy')
     elif args.preprocessing == 'remove_cancelations' :
         train_braids = remove_cancelations('train')
         val_braids = remove_cancelations('val')
@@ -124,6 +124,10 @@ def main():
         model = Reformer(vocab_size=num_generators+1, d_model=args.d_model, 
                          nhead=args.nheads, num_layers=args.num_layers, max_seq_len=46, 
                          classification=args.classification)
+    elif args.model == 'gnn' :
+        model = GNN(hidden_channels=args.hidden_size, num_heads=args.nheads,  
+                    num_layers=args.num_layers,dropout=args.dropout, 
+                    classification=args.classification, ohe_inverses=args.ohe_inverses)
 
     lr_monitor = LearningRateMonitor(logging_interval='epoch')
     checkpoint_callback = ModelCheckpoint(monitor="val_l1_loss")

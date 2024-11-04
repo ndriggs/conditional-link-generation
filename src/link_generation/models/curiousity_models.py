@@ -4,7 +4,8 @@ import torch.nn.functional as F
 import lightning as pl
 from torch.optim.lr_scheduler import ExponentialLR, LambdaLR
 from reformer_pytorch import ReformerLM
-from torch_geometric.nn import GATConv
+from torch_geometric.nn.conv import TransformerConv
+from torch_geometric.nn.pool import global_mean_pool, global_max_pool
 from .utils import topk_accuracy
 import numpy as np
 import math
@@ -440,79 +441,100 @@ class Reformer(pl.LightningModule) :
 
 
 class GNN(pl.LightningModule):
-    def __init__(self, hidden_channels, num_heads=2, num_layers=2, classification=False, num_classes=41):
+    def __init__(self, hidden_channels, num_heads=2, num_layers=2, dropout=0.2,
+                 classification=False, ohe_inverses=False, num_classes=77):
         super(GNN, self).__init__()
-        self.gat1 = GATConv(1, hidden_channels, heads=num_heads)
-        self.gat2 = GATConv(hidden_channels * num_heads, hidden_channels, heads=num_heads)
-        if num_layers == 3 :
-            self.gat3 = GATConv(hidden_channels*num_heads, hidden_channels, heads=num_heads)
+        num_node_features = 12 if ohe_inverses else 6
+        self.gat1 = TransformerConv(num_node_features, hidden_channels, heads=num_heads)
+        self.gat2 = TransformerConv(hidden_channels * num_heads, 2*hidden_channels, heads=num_heads)
+        fc_in_dim = 2*hidden_channels*num_heads
+        if num_layers >= 3 :
+            self.gat3 = TransformerConv(2*hidden_channels*num_heads, 4*hidden_channels, heads=num_heads)
+            fc_in_dim = 4*hidden_channels*num_heads
+        if num_layers >= 4 :
+            self.gat4 = TransformerConv(4*hidden_channels*num_heads, 4*hidden_channels, heads=num_heads)
+        if num_layers >= 5 :
+            self.gat5 = TransformerConv(4*hidden_channels*num_heads, 4*hidden_channels, heads=num_heads)
         if classification :
-            self.fc = torch.nn.Linear(hidden_channels * num_heads, num_classes)
+            self.fc = torch.nn.Linear(fc_in_dim, num_classes)
         else :
-            self.fc = torch.nn.Linear(hidden_channels * num_heads, 1)
+            self.fc = torch.nn.Linear(fc_in_dim, 1)
 
-    def forward(self, x, edge_index):
-        # first GAT layer 
-        x = self.gat1(x, edge_index)
+        self.dropout = nn.Dropout(dropout)
+        self.num_layers = num_layers
+        self.classification = classification
+        self.l1_loss = nn.L1Loss()
+        if classification :
+            self.cross_entropy = nn.CrossEntropyLoss(label_smoothing=0.1)
+        self.num_classes = num_classes
+
+    def forward(self, data):
+        # first conv layer 
+        x = self.gat1(data.x, data.edge_index)
         x = F.relu(x)
-        x = F.dropout(x, p=0.3, training=self.training)
+        x = self.dropout(x)
         
-        # second GAT layer
-        x = self.gat2(x, edge_index)
+        # second conv layer
+        x = self.gat2(x, data.edge_index)
         x = F.relu(x)
 
-        # (optional) third GAT layer
-        if num_layers == 3 :
-            x = F.dropout(x, p=0.3, training=self.training)
-            x = self.gat3(x, edge_index)
+        # (optional) third, fourth, and fifth conv layer
+        if self.num_layers >= 3 :
+            x = self.dropout(x)
+            x = self.gat3(x, data.edge_index)
             x = F.relu(x)
-        
+        if self.num_layers >= 4 : 
+            x = self.dropout(x)
+            x = self.gat4(x, data.edge_index)
+            x = F.relu(x)
+        if self.num_layers >= 5 :
+            x = self.dropout(x)
+            x = self.gat5(x, data.edge_index)
+            x = F.relu(x)
+
         # pooling and linear layer
-        x = torch.mean(x, dim=0).unsqueeze(0) 
+        x = global_max_pool(x, data.batch) 
         x = self.fc(x)
         
         return x
 
-    def class_idx_to_sig(idx) :
-        max_min_sig = (self.num_classes-1)/2
-        idx[idx > max_min_sig] = -1*(idx[idx>max_min_sig] - max_min_sig)
-        return idx
-
     def training_step(self, batch, batch_idx):
-        x, y = batch
-        y_hat = self(x)
+        y_hat = self(batch)
         if self.classification :
-            loss = self.cross_entropy(y_hat, y)
+            y = (batch.y + ((self.num_classes - 1) / 2)).to(torch.int64) # shift the signatures so they start at 0
+            loss = self.cross_entropy(y_hat.squeeze(1), y)
         else : # regression
-            loss = self.mse_loss(y_hat, y)
+            loss = self.l1_loss(y_hat.squeeze(1), batch.y)
         self.log('train_loss', loss)
         return loss
 
     def validation_step(self, batch, batch_idx):
-        x, y = batch
-        y_hat = self(x)
+        y_hat = self(batch)
         if self.classification :
             assert len(y_hat.shape) == 2
-            class_idxs = y_hat.argmax(1) # preserve the batch dim, armax over classes
-            y_hat = class_idx_to_sig(class_idxs).unsqueeze(1)
-            y = class_idx_to_sig(y.to(torch.float32))
-        mse_loss = self.mse_loss(y_hat, y)
-        l1_loss = self.l1_loss(y_hat, y)
-        self.log('val_mse_loss', mse_loss)
-        self.log('val_l1_loss', l1_loss)
+            pred_classes = y_hat.argmax(1) # preserve the batch dim, armax over classes
+            # convert top predicted class labels to signatures, so that we can compute 
+            # regression loss 
+            y_hat = (pred_classes - ((self.num_classes - 1)/2)).unsqueeze(1)
+        l1_loss = self.l1_loss(y_hat.squeeze(1), batch.y)
+        # add the batch_size= to suppress warnings, even though that's not the actual batch size
+        self.log('val_l1_loss', l1_loss, batch_size=batch.x.shape[0])
 
     def test_step(self, batch, batch_idx):
-        x, y = batch
-        y_hat = self(x)
+        y_hat = self(batch)
         if self.classification :
             assert len(y_hat.shape) == 2
-            class_idxs = y_hat.argmax(1) # preserve the batch dim, armax over classes
-            y_hat = class_idx_to_sig(class_idxs).unsqueeze(1)
-            y = class_idx_to_sig(y.to(torch.float32))
-        mse_loss = self.mse_loss(y_hat, y)
-        l1_loss = self.l1_loss(y_hat, y)
-        self.log('test_mse_loss', mse_loss)
-        self.log('test_l1_loss', l1_loss)
+            # convert signatures to class ids 
+            target_classes = (batch.y + ((self.num_classes - 1) / 2)).to(torch.int64)
+            top1_acc, top5_acc = topk_accuracy(y_hat, target_classes)
+            self.log('test_top1_acc', top1_acc.item(), batch_size=batch.x.shape[0])
+            self.log('test_top5_acc', top5_acc.item(), batch_size=batch.x.shape[0])
+            pred_classes = y_hat.argmax(1) # preserve the batch dim, armax over classes
+            # convert top predicted class labels to signatures, so that we can compute 
+            # regression loss 
+            y_hat = (pred_classes - ((self.num_classes - 1)/2)).unsqueeze(1)
+        l1_loss = self.l1_loss(y_hat.squeeze(1), batch.y) 
+        self.log('test_l1_loss', l1_loss, batch_size=batch.x.shape[0])
 
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(self.parameters(), lr=.001)

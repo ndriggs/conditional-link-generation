@@ -8,7 +8,7 @@ from typing import Union
 import json
 
 def load_braid_words(train_test_or_val: str):
-    with open(f'src/rl_link_builder/predicting_signature/{train_test_or_val}_braids.txt', 'r') as f :
+    with open(f'src/link_generation/predicting_signature/{train_test_or_val}_braids.txt', 'r') as f :
         braid_words = json.load(f)
     return braid_words
 
@@ -92,7 +92,7 @@ def braid_word_to_geom_data(braid_word, y, ohe_inverses: bool) :
         # convert -1 to 7, -2 to 8, -3 to 9, etc. 
         braid_word = torch.abs(braid_word) + (1-torch.sign(braid_word))*((braid_index-1)/2)
         node_features = torch.zeros((len(braid_word),(braid_index-1)*2))
-        node_features[torch.arange(len(braid_word)),braid_word-1] = 1.0
+        node_features[torch.arange(len(braid_word)),braid_word.to(torch.int64)-1] = 1.0
     else : 
         node_features = torch.zeros((len(braid_word),braid_index-1))
         node_features[torch.arange(len(braid_word)),torch.abs(braid_word)-1] = torch.sign(braid_word).to(torch.float32)
