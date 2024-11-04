@@ -62,13 +62,13 @@ lk_reps = []
 #         lk_reps.append(list(lk_rep.flatten()) + [sig])
 braid_words = []
 for braid_word_length in range(2, 46) :
-    for _ in range(braid_word_length*100) :
+    for _ in range(braid_word_length*110) :
         braid_word = np.random.choice(generators, size=braid_word_length, replace=True)
         lk_rep = braid_word_to_lk_rep(braid_word)
         sig = Link(B([Integer(sigma) for sigma in braid_word])).signature()
         lk_reps.append(list(lk_rep.flatten()) + [sig])
         braid_words.append(list(braid_word))
-    for _ in range(braid_word_length*40) :
+    for _ in range(braid_word_length*70) :
         sigma = np.random.choice(generators)
         braid_word = [sigma]
         insert_opp_prob = np.random.uniform(low=0,high=0.25)
@@ -78,8 +78,7 @@ for braid_word_length in range(2, 46) :
             probabilities[generators.index(sigma)] = 0.5
             sigma = np.random.choice(generators, p=probabilities)
             braid_word.append(sigma)
-            # here's where I accidentally make it one longer than braid_word_length sometimes
-            if np.random.uniform() <= insert_opp_prob : # should have: "and len(braid_word) < braid_word_length"
+            if (np.random.uniform() <= insert_opp_prob) and (len(braid_word) < braid_word_length) :
                 braid_word.append(-1*np.sign(sigma)*np.random.randint(1,braid_index))
         lk_rep = braid_word_to_lk_rep(braid_word)
         sig = Link(B([Integer(sigma) for sigma in braid_word])).signature()
