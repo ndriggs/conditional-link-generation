@@ -10,6 +10,60 @@ from .utils import topk_accuracy
 import numpy as np
 import math
 
+class NaiveModel(pl.LightningModule):
+    '''
+    Naively learns a linear model for computing signature based on the 
+    difference between number of sigmas and inverse sigmas.
+
+    Since adding the same sigma over and over again causes the signature 
+    to go down and adding the same inverse repeatedly causes the signature 
+    to go up, we'd expect the weight to be negative and bias close to zero. 
+    '''
+    def __init__(self):
+        super(NaiveModel, self).__init__()
+        self.linear = nn.Linear(1,1, bias=True)
+        self.l1_loss = nn.L1Loss()
+
+    def forward(self, x) :
+        x, length = x
+        x = torch.sum(torch.sign(x), dim=1).unsqueeze(1).to(torch.float32)
+        return self.linear(x)
+
+    def training_step(self, batch, batch_idx):
+        x, y = batch
+        y_hat = self(x)
+        loss = self.l1_loss(y_hat.squeeze(1), y)
+        self.log('train_loss', loss)
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        x, y = batch
+        y_hat = self(x)
+        l1_loss = self.l1_loss(y_hat.squeeze(1), y)
+        self.log('val_l1_loss', l1_loss)
+
+    def test_step(self, batch, batch_idx):
+        x, y = batch
+        y_hat = self(x)
+        l1_loss = self.l1_loss(y_hat.squeeze(1), y)
+        self.log('test_l1_loss', l1_loss)
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(self.parameters(), lr=.001)
+        scheduler = ExponentialLR(optimizer, gamma=0.95)
+        
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "interval": "epoch",
+                "frequency": 1,
+                "name": "exp_lr"
+            }
+        }
+
+    
+
 class MLP(pl.LightningModule):
     def __init__(self, hidden_size, dropout, lk_matrix_size=21, 
                  num_invariants=1, classification=False, num_classes=77):

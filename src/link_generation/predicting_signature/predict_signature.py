@@ -5,12 +5,12 @@ import lightning as pl
 from lightning import Trainer
 from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
 from .utils import *
-from ..models.curiousity_models import MLP, CNN, TransformerEncoder, Reformer, GNN
+from ..models.curiousity_models import NaiveModel, MLP, CNN, TransformerEncoder, Reformer, GNN
 import numpy as np
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    # options: mlp, cnn, transformer_encoder, reformer, gnn
+    # options: naive, mlp, cnn, transformer_encoder, reformer, gnn
     parser.add_argument('--model', type=str, default=None)
     # options: clip (clip then normalize), log (abs log then scale) (only applicable to cnn and mlp)
     # other option: remove_cancelations (only applicable to transformer_encoder, reformer, and gnn)
@@ -57,7 +57,7 @@ def main():
         train_braids = remove_cancelations('train')
         val_braids = remove_cancelations('val')
         test_braids = remove_cancelations('test')
-    elif args.model in ['transformer_encoder', 'reformer', 'gnn'] :
+    elif args.model in ['naive', 'transformer_encoder', 'reformer', 'gnn'] :
         train_braids = load_braid_words('train')
         val_braids = load_braid_words('val')
         test_braids = load_braid_words('test')
@@ -74,11 +74,11 @@ def main():
                                     classification=args.classification,
                                     cnn=(args.model == 'cnn'))
 
-    elif args.model in ['transformer_encoder', 'reformer'] :
+    elif args.model in ['naive', 'transformer_encoder', 'reformer'] :
         train_padded, train_lengths = pad_braid_words(train_braids)
         val_padded, val_lengths = pad_braid_words(val_braids)
         test_padded, test_lengths = pad_braid_words(test_braids)
-    if args.model in ['transformer_encoder', 'reformer'] :
+    if args.model in ['naive', 'transformer_encoder', 'reformer'] :
         train_dataset = BraidDataset(data=train_padded, targets=train_targets, 
                                      classification=args.classification,
                                      seq_lengths=train_lengths)
@@ -90,7 +90,7 @@ def main():
                                     seq_lengths=test_lengths)
 
     # create the dataloaders for all models but GNN
-    if args.model in ['mlp', 'cnn', 'transformer_encoder', 'reformer'] : 
+    if args.model in ['naive', 'mlp', 'cnn', 'transformer_encoder', 'reformer'] : 
         train_loader = DataLoader(train_dataset, batch_size=128, shuffle=True)
         val_loader = DataLoader(val_dataset, batch_size=128, shuffle=False)
         test_loader = DataLoader(test_dataset, batch_size=128, shuffle=False)
@@ -109,7 +109,9 @@ def main():
 
     # make model 
     num_generators = 12
-    if args.model == 'mlp' :
+    if args.model == 'naive' :
+        model = NaiveModel()
+    elif args.model == 'mlp' :
         model = MLP(hidden_size=args.hidden_size, dropout=args.dropout, 
                     classification=args.classification)
     elif args.model == 'cnn' :
