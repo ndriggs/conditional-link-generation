@@ -16,24 +16,24 @@ def parse_args():
     # other option: remove_cancelations (only applicable to transformer_encoder, reformer, and gnn)
     parser.add_argument('--preprocessing', type=str, default=None)
     # whether to treat each distinct signature as a separate category or as a continuous value 
-    parser.add_argument('--classification', type=bool, default=False)
+    parser.add_argument('--classification', type=lambda x: x.lower() == 'true', default=False)
     parser.add_argument('--accelerator', type=str, default='cuda')
     # applicable to mlp and gnn
     parser.add_argument('--hidden_size', type=int, default=100)
     parser.add_argument('--dropout', type=float, default=0.3)
     # only applicable to cnn
     parser.add_argument('--kernel_size', type=int, default=2)
-    parser.add_argument('--layer_norm', type=bool, default=True)
+    parser.add_argument('--layer_norm', type=lambda x: x.lower() == 'true', default=True)
     # only applicable to transformer encoder, how many times d_model should 
     # the dimension of the feedforward should be (2-4)
-    parser.add_argument('--dim_feedforward', type=int, default=2)
+    parser.add_argument('--dim_feedforward', type=int, default=4)
     # only applicable to transformer encoder and reformer
     parser.add_argument('--d_model', type=int, default=32)
     parser.add_argument('--nheads', type=int, default=2)
     # only applicable to transformer encoder, reformer, and gnn
     parser.add_argument('--num_layers', type=int, default=None)
     # only applicable to gnn
-    parser.add_argument('--ohe_inverses', type=bool, default=False)
+    parser.add_argument('--ohe_inverses', type=lambda x: x.lower() == 'true', default=False)
     return parser.parse_args()
 
 def main():
@@ -139,7 +139,7 @@ def main():
     trainer = pl.Trainer(
         accelerator=args.accelerator,
         # devices=torch.cuda.device_count(),
-        max_epochs=1,
+        max_epochs=100,
         callbacks=[lr_monitor, checkpoint_callback],
         # fast_dev_run=2, # for when testing
         enable_checkpointing=True, # so it returns the best model
@@ -148,7 +148,7 @@ def main():
         # num_nodes = args.num_nodes,
     )
  
-    best_model = trainer.fit(model, train_loader, test_loader)
+    best_model = trainer.fit(model, train_loader, val_loader)
     trainer.test(best_model, val_loader, ckpt_path='best')
 
     print(vars(args))
