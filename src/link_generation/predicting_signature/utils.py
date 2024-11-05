@@ -143,7 +143,7 @@ def get_experiment_name(args) :
     preproc = args.preprocessing 
     if preproc == 'remove_cancelations' :
         preproc = 'rm'
-    elif preproc is None :
+    elif preproc == 'do_nothing' :
         preproc = ''
     
     if args.model == 'mlp' : 
@@ -158,4 +158,4 @@ def get_experiment_name(args) :
 
     elif args.model == 'gnn' :
         ohe = 'ohe' if args.ohe_inverses else 'neg'
-        return f'{model}_{preproc}_{task}_l{args.num_layers}_{ohe}'
+        return f'{model}_{preproc}_{task}_d{args.dropout}_l{args.num_layers}_{ohe}'
