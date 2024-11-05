@@ -7,3 +7,5 @@
 
 # applications of MCTS beyond games 
 # file:///C:/Users/natha/Downloads/s10489-023-05240-w.pdf
+
+# https://github.com/FelixOpolka/Single-Player-MCTS/tree/master
