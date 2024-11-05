@@ -2,6 +2,7 @@ __pycache__/
 *.npy
 *.txt
 *.out
+*.err
 *.pkl
 *.zip
 *.sh
