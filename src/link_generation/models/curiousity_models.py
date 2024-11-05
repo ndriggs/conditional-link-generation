@@ -495,7 +495,7 @@ class Reformer(pl.LightningModule) :
 
 
 class GNN(pl.LightningModule):
-    def __init__(self, hidden_channels, num_heads=2, num_layers=2, dropout=0.2,
+    def __init__(self, hidden_channels=16, num_heads=2, num_layers=2, dropout=0.2,
                  classification=False, ohe_inverses=False, num_classes=77):
         super(GNN, self).__init__()
         num_node_features = 12 if ohe_inverses else 6
