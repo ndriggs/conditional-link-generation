@@ -13,7 +13,7 @@ import math
 class NaiveModel(pl.LightningModule):
     '''
     Naively learns a linear model for computing signature based on the 
-    difference between number of sigmas and inverse sigmas.
+    difference between number of sigmas and sigmas inverses.
 
     Since adding the same sigma over and over again causes the signature 
     to go down and adding the same inverse repeatedly causes the signature 
@@ -66,7 +66,7 @@ class NaiveModel(pl.LightningModule):
 
 class MLP(pl.LightningModule):
     def __init__(self, hidden_size, dropout, lk_matrix_size=21, 
-                 num_invariants=1, classification=False, num_classes=77):
+                 num_invariants=1, classification=False, num_classes=75):
         super(MLP, self).__init__()
 
         self.classification = classification
@@ -154,7 +154,7 @@ class MLP(pl.LightningModule):
 class CNN(pl.LightningModule):
     def __init__(self, kernel_size: int, layer_norm: bool, 
                  lk_matrix_size: int = 21, num_invariants: int = 1,
-                 classification=False, num_classes=77) :
+                 classification=False, num_classes=75) :
         super(CNN, self).__init__()
 
         self.layer_norm = layer_norm
@@ -276,7 +276,7 @@ class CNN(pl.LightningModule):
 class TransformerEncoder(pl.LightningModule):
     def __init__(self, vocab_size, d_model, nhead, num_encoder_layers, 
                  dim_feedforward, max_seq_length, classification=False,
-                 num_classes=77, warmup_steps=4000):
+                 num_classes=75, warmup_steps=4000):
         super(TransformerEncoder, self).__init__()
 
         self.classification = classification
@@ -314,7 +314,7 @@ class TransformerEncoder(pl.LightningModule):
         src = src.transpose(0, 1)
         
         # Create mask based on src_lengths
-        src_key_padding_mask = (torch.arange(src.size(0)).unsqueeze(0) >= src_lengths.unsqueeze(1)).to(src.device)
+        src_key_padding_mask = (torch.arange(src.size(0)).unsqueeze(0).to('cuda:0') >= src_lengths.unsqueeze(1)).to(src.device)
         
         # Pass through the transformer encoder
         output = self.transformer_encoder(src, src_key_padding_mask=src_key_padding_mask)
@@ -408,7 +408,7 @@ class PositionalEncoding(nn.Module):
 class Reformer(pl.LightningModule) :
     def __init__(self, vocab_size, d_model, nhead, num_layers,
                  max_seq_len, classification=False,
-                 num_classes=77, warmup_steps=4000):
+                 num_classes=75, warmup_steps=4000):
         super(Reformer, self).__init__()
 
         self.classification = classification
@@ -496,7 +496,7 @@ class Reformer(pl.LightningModule) :
 
 class GNN(pl.LightningModule):
     def __init__(self, hidden_channels=16, num_heads=2, num_layers=2, dropout=0.2,
-                 classification=False, ohe_inverses=False, num_classes=77):
+                 classification=False, ohe_inverses=False, num_classes=75):
         super(GNN, self).__init__()
         num_node_features = 12 if ohe_inverses else 6
         self.gat1 = TransformerConv(num_node_features, hidden_channels, heads=num_heads)
