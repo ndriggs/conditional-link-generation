@@ -121,10 +121,10 @@ def main():
         model = TransformerEncoder(vocab_size=num_generators+1, d_model=args.d_model, 
                                    nhead=args.nheads, num_encoder_layers=args.num_layers, 
                                    dim_feedforward=args.dim_feedforward*args.d_model, 
-                                   max_seq_length=46, classification=args.classification)
+                                   max_seq_length=45, classification=args.classification)
     elif args.model == 'reformer' :
         model = Reformer(vocab_size=num_generators+1, d_model=args.d_model, 
-                         nhead=args.nheads, num_layers=args.num_layers, max_seq_len=46, 
+                         nhead=args.nheads, num_layers=args.num_layers, max_seq_len=45, 
                          classification=args.classification)
     elif args.model == 'gnn' :
         model = GNN(hidden_channels=args.hidden_size, num_heads=args.nheads,  
