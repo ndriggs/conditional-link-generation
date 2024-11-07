@@ -255,3 +255,7 @@ def get_experiment_name(args) :
     elif args.model == 'gnn' :
         ohe = 'ohe' if args.ohe_inverses else 'neg'
         return f'{model}_{preproc}_{task}_d{args.dropout}_l{args.num_layers}_{ohe}'
+    
+    elif args.model  == 'knot_gnn' :
+        ohe = 'pos_neg' if args.pos_neg else 'ohe'
+        return f'{model}_{preproc}_{task}_{ohe}'

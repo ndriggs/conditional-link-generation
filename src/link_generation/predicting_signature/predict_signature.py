@@ -153,7 +153,7 @@ def main():
     trainer = pl.Trainer(
         accelerator=args.accelerator,
         # devices=torch.cuda.device_count(),
-        max_epochs=1,
+        max_epochs=100,
         callbacks=[lr_monitor, checkpoint_callback],
         # fast_dev_run=2, # for when testing
         enable_checkpointing=True, # so it returns the best model
