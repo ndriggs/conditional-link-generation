@@ -7,6 +7,8 @@ import numpy as np
 from typing import Union
 import json
 
+BRAID_INDEX = 7
+
 def load_braid_words(train_test_or_val: str):
     with open(f'src/link_generation/predicting_signature/{train_test_or_val}_braids.txt', 'r') as f :
         braid_words = json.load(f)
@@ -61,15 +63,14 @@ def pad_braid_words(braid_words, pad_value=0):
     
     return padded_seqs, lengths_tensor
 
-def braid_word_to_geom_data(braid_word, y, ohe_inverses: bool) :
+def braid_word_to_circular_geom_data(braid_word, y, ohe_inverses: bool) :
     '''Converts a braid word (as a list of integers) to a torch_geometric.data.Data object
-    containing node features and adjacency list information
+    containing node features and adjacency list information. Puts braid word generators 
+    in a circle each connected to its adjacent neighbors. 
 
     parameters: 
     braid_word: braid word as a list 
-
     y: the target invariant value(s)
-
     ohe_inverses: if True then one-hot-encodes all generators for node features. If False 
     then only one-hot-encodes the positive sigmas and uses -1 in the appropriate spot for 
     their inverses. e.g. if the braid index was 4 and ohe_inverses = True, then sigma_1 = 
@@ -85,23 +86,118 @@ def braid_word_to_geom_data(braid_word, y, ohe_inverses: bool) :
             edges.append([i+1, i])
 
     # construct the node features, with each generator in the braid word as a node
-    braid_word = torch.tensor(braid_word)
-    braid_index = 7
-    if ohe_inverses :
-        # move the negative sigmas to the spots after the positive ones
-        # convert -1 to 7, -2 to 8, -3 to 9, etc. 
-        braid_word = torch.abs(braid_word) + (1-torch.sign(braid_word))*((braid_index-1)/2)
-        node_features = torch.zeros((len(braid_word),(braid_index-1)*2))
-        node_features[torch.arange(len(braid_word)),braid_word.to(torch.int64)-1] = 1.0
-    else : 
-        node_features = torch.zeros((len(braid_word),braid_index-1))
-        node_features[torch.arange(len(braid_word)),torch.abs(braid_word)-1] = torch.sign(braid_word).to(torch.float32)
+    node_features = get_node_features(braid_word, both=False, pos_neg=False, ohe_inverses=ohe_inverses)
 
     # now return the graph Data object
     return Data(x=node_features, edge_index=torch.LongTensor(edges).t(), y=torch.tensor(y))
 
-def get_graph_dataloader(braid_words, targets, ohe_inverses:bool, batch_size:int, shuffle:bool) :
-    data_list = [braid_word_to_geom_data(braid_word, y, ohe_inverses) for braid_word, y in zip(braid_words, targets)]
+def braid_word_to_knot_geom_data(braid_word, y, both: bool, pos_neg: bool, ohe_inverses: bool) :
+    '''
+    Converts a braid word (as a list of integers) to a torch_geometric.data.Data object
+    containing node features and adjacency list information. Each crossing has a directed edge to 
+    the two* crossings that its strands go to (looking at the braid from top to bottom) and has two*
+    incoming edges from the crossings its strands came from. When a generator is repeated or followed 
+    by its inverse, there is only one edge since torch_geometric.nn.conv.TransformerConv doesn't 
+    support edge_weights. Edges can circle from the bottom back to the top if that is where the strands
+    lead in the braid closure. 
+
+    parameters: 
+    braid_word: braid word as a list of integers
+    y: the target invariant value(s)
+    ohe_inverses: if True then one-hot-encodes all generators for node features. If False 
+    then only one-hot-encodes the positive sigmas and uses -1 in the appropriate spot for 
+    their inverses. e.g. if the braid index was 4 and ohe_inverses = True, then sigma_1 = 
+    [1,0,0,0,0,0] and sigma_1^{-1} = [0,0,0,1,0,0]. If ohe_inverses = False then sigma_1 = 
+    [1,0,0] and sigma_1^{-1} = [-1,0,0]
+    '''
+    edges = []
+    abs_braid_word = np.abs(braid_word)
+    for i in range(len(braid_word)) :
+        gen = abs_braid_word[i]
+        left_out_edge_found = False
+        right_out_edge_found = False
+        for j in range(1,len(braid_word)) :
+            if abs_braid_word[(i+j)%len(braid_word)] == gen :
+                edges.append([i, (i+j)%len(braid_word)]) 
+                left_out_edge_found = True
+                right_out_edge_found = True
+                break
+            elif (abs_braid_word[(i+j)%len(braid_word)] == gen-1) and (not left_out_edge_found) :
+                edges.append([i, (i+j)%len(braid_word)])
+                left_out_edge_found = True
+            elif (abs_braid_word[(i+j)%len(braid_word)] == gen+1) and (not right_out_edge_found) :
+                edges.append([i, (i+j)%len(braid_word)])
+                right_out_edge_found = True
+            if left_out_edge_found and right_out_edge_found :
+                break
+    if not left_out_edge_found :
+        edges.append([i, i])
+    if (not right_out_edge_found) and ([i,i] not in edges) :
+        edges.append([i, i])
+
+    node_features = get_node_features(braid_word, both=both, pos_neg=pos_neg, ohe_inverses=ohe_inverses)
+
+    return Data(x=node_features, edge_index=torch.LongTensor(edges).t(), y=torch.tensor(y))
+
+
+
+def get_node_features(braid_word, both: bool, pos_neg: bool, ohe_inverses: bool) :
+    '''
+    braid_word: braid word as a list of integers
+    both: whether or not to include both positive/negative crossing info and generator ohe-ing
+    pos_neg: if true returns 2 node features. The positivity and negativity of the crossing
+    ohe_inverses: if true returns each generator one hot encoded separately, else returns the 
+    inverses as -1 in the spot of the corresponding positive generator
+    '''
+    braid_word = torch.tensor(braid_word)
+    if both : 
+        if ohe_inverses :
+            node_features = torch.zeros((len(braid_word),(BRAID_INDEX-1)*2 + 2))
+            node_features[:,:-2] = get_ohe_inverses_node_features(braid_word)
+            node_features[:,-2:] = get_pos_neg_node_features(braid_word)
+        else : 
+            node_features = torch.zeros((len(braid_word),BRAID_INDEX+1))
+            node_features[:,:-2] = get_not_ohe_inverses_node_features(braid_word)
+            node_features[:,-2:] = get_pos_neg_node_features(braid_word)
+    elif pos_neg : # only encode if the crossing is a positive or negative crossing
+        node_features = get_pos_neg_node_features(braid_word)
+    elif ohe_inverses :
+        node_features = get_ohe_inverses_node_features(braid_word)
+    else : 
+        node_features = get_not_ohe_inverses_node_features(braid_word)
+    return node_features
+
+def get_pos_neg_node_features(braid_word) :
+    '''One hot encodes whether each "node" (braid generator) is a postive crossing or 
+    negative crossing'''
+    node_features = torch.zeros((len(braid_word), 2))
+    node_features[:,0] = (torch.sign(braid_word) > 0).to(torch.float32)
+    node_features[:,1] = (torch.sign(braid_word) < 0).to(torch.float32)
+    return node_features
+
+def get_ohe_inverses_node_features(braid_word) :
+    '''One hot encodes all sigmas and their inverses as distinct generators'''
+    # move the negative sigmas to the spots after the positive ones
+    # convert -1 to 7, -2 to 8, -3 to 9, etc. 
+    braid_word = torch.abs(braid_word) + (1-torch.sign(braid_word))*((BRAID_INDEX-1)/2)
+    node_features = torch.zeros((len(braid_word),(BRAID_INDEX-1)*2))
+    node_features[torch.arange(len(braid_word)),braid_word.to(torch.int64)-1] = 1.0
+    return node_features
+
+def get_not_ohe_inverses_node_features(braid_word) :
+    '''Encodes each inverse as negative the one hot encoding of its corresponding positive generator'''
+    node_features = torch.zeros((len(braid_word),BRAID_INDEX-1))
+    node_features[torch.arange(len(braid_word)),torch.abs(braid_word)-1] = torch.sign(braid_word).to(torch.float32)
+    return node_features 
+
+def get_circular_graph_dataloader(braid_words, targets, ohe_inverses:bool, batch_size:int, shuffle:bool) :
+    data_list = [braid_word_to_circular_geom_data(braid_word, y, ohe_inverses) for braid_word, y in zip(braid_words, targets)]
+    return DataLoader(data_list, batch_size=batch_size, shuffle=shuffle)
+
+def get_knot_graph_dataloader(braid_words, targets, both:bool, pos_neg:bool, ohe_inverses:bool, batch_size:int, shuffle:bool) :
+    data_list = [
+        braid_word_to_knot_geom_data(braid_word, y, both, pos_neg, ohe_inverses) for braid_word, y in zip(braid_words, targets)
+    ]
     return DataLoader(data_list, batch_size=batch_size, shuffle=shuffle)
 
 

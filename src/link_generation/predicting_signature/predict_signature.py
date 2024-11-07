@@ -2,7 +2,6 @@ from torch.utils.data import DataLoader
 import torch
 import argparse
 import lightning as pl
-from lightning import Trainer
 from lightning.pytorch.callbacks import LearningRateMonitor, ModelCheckpoint
 from .utils import *
 from ..models.curiousity_models import NaiveModel, MLP, CNN, TransformerEncoder, Reformer, GNN
@@ -34,6 +33,9 @@ def parse_args():
     parser.add_argument('--num_layers', type=int, default=None)
     # only applicable to gnn
     parser.add_argument('--ohe_inverses', type=lambda x: x.lower() == 'true', default=False)
+    # only applicable to knot gnn 
+    parser.add_argument('--both', type=lambda x: x.lower() == 'true', default=False)
+    parser.add_argument('--pos_neg', type=lambda x: x.lower() == 'true', default=True)
     return parser.parse_args()
 
 def main():
@@ -57,7 +59,7 @@ def main():
         train_braids = remove_cancelations('train')
         val_braids = remove_cancelations('val')
         test_braids = remove_cancelations('test')
-    elif args.model in ['naive', 'transformer_encoder', 'reformer', 'gnn'] :
+    elif args.model in ['naive', 'transformer_encoder', 'reformer', 'circular_gnn', 'knot_gnn'] :
         train_braids = load_braid_words('train')
         val_braids = load_braid_words('val')
         test_braids = load_braid_words('test')
@@ -96,16 +98,26 @@ def main():
         test_loader = DataLoader(test_dataset, batch_size=128, shuffle=False)
 
     # create the datasets and dataloaders for GNN
-    if args.model == 'gnn' :
-        train_loader = get_graph_dataloader(train_braids, train_targets, 
-                                            ohe_inverses=args.ohe_inverses, 
-                                            batch_size=128, shuffle=True)
-        val_loader = get_graph_dataloader(val_braids, val_targets, 
-                                          ohe_inverses=args.ohe_inverses, 
-                                          batch_size=128, shuffle=False)
-        test_loader = get_graph_dataloader(test_braids, test_targets, 
-                                           ohe_inverses=args.ohe_inverses, 
-                                           batch_size=128, shuffle=False)
+    if args.model == 'circular_gnn' :
+        train_loader = get_circular_graph_dataloader(train_braids, train_targets, 
+                                                     ohe_inverses=args.ohe_inverses, 
+                                                     batch_size=128, shuffle=True)
+        val_loader = get_circular_graph_dataloader(val_braids, val_targets, 
+                                                   ohe_inverses=args.ohe_inverses, 
+                                                   batch_size=128, shuffle=False)
+        test_loader = get_circular_graph_dataloader(test_braids, test_targets, 
+                                                    ohe_inverses=args.ohe_inverses, 
+                                                    batch_size=128, shuffle=False)
+    elif args.model == 'knot_gnn' :
+        train_loader = get_knot_graph_dataloader(train_braids, train_targets, both=args.both,
+                                                 pos_neg=args.pos_neg, ohe_inverses=args.ohe_inverses, 
+                                                 batch_size=128, shuffle=True)
+        val_loader = get_knot_graph_dataloader(val_braids, val_targets, both=args.both,
+                                               pos_neg=args.pos_neg, ohe_inverses=args.ohe_inverses, 
+                                               batch_size=128, shuffle=False)
+        test_loader = get_knot_graph_dataloader(test_braids, test_targets, both=args.both,
+                                                pos_neg=args.pos_neg, ohe_inverses=args.ohe_inverses, 
+                                                batch_size=128, shuffle=False)
 
     # make model 
     num_generators = 12
