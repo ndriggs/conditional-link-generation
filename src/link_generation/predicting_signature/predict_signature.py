@@ -12,7 +12,7 @@ def parse_args():
     # options: naive, mlp, cnn, transformer_encoder, reformer, gnn
     parser.add_argument('--model', type=str, default=None)
     # options: clip (clip then normalize), log (abs log then scale) (only applicable to cnn and mlp)
-    # other option: remove_cancelations (only applicable to transformer_encoder, reformer, and gnn)
+    # other option: remove_cancellations (only applicable to transformer_encoder, reformer, and gnn)
     parser.add_argument('--preprocessing', type=str, default=None)
     # whether to treat each distinct signature as a separate category or as a continuous value 
     parser.add_argument('--classification', type=lambda x: x.lower() == 'true', default=False)
@@ -33,6 +33,7 @@ def parse_args():
     parser.add_argument('--num_layers', type=int, default=None)
     # only applicable to gnn
     parser.add_argument('--ohe_inverses', type=lambda x: x.lower() == 'true', default=False)
+    parser.add_argument('--undirected', type=lambda x: x.lower() == 'true', default=True)
     # only applicable to knot gnn 
     parser.add_argument('--both', type=lambda x: x.lower() == 'true', default=False)
     parser.add_argument('--pos_neg', type=lambda x: x.lower() == 'true', default=False)
@@ -55,7 +56,7 @@ def main():
         train_data = np.load('src/link_generation/predicting_signature/train_log_scaled.npy')
         val_data = np.load('src/link_generation/predicting_signature/val_log_scaled.npy')
         test_data = np.load('src/link_generation/predicting_signature/test_log_scaled.npy')
-    elif args.preprocessing == 'remove_cancelations' :
+    elif args.preprocessing == 'remove_cancellations' :
         train_braids = remove_cancelations('train')
         val_braids = remove_cancelations('val')
         test_braids = remove_cancelations('test')
@@ -99,25 +100,25 @@ def main():
 
     # create the datasets and dataloaders for GNN
     if args.model == 'circular_gnn' :
-        train_loader = get_circular_graph_dataloader(train_braids, train_targets, 
+        train_loader = get_circular_graph_dataloader(train_braids, train_targets, both=args.both,
                                                      ohe_inverses=args.ohe_inverses, 
                                                      batch_size=128, shuffle=True)
-        val_loader = get_circular_graph_dataloader(val_braids, val_targets, 
+        val_loader = get_circular_graph_dataloader(val_braids, val_targets, both=args.both,
                                                    ohe_inverses=args.ohe_inverses, 
                                                    batch_size=128, shuffle=False)
-        test_loader = get_circular_graph_dataloader(test_braids, test_targets, 
+        test_loader = get_circular_graph_dataloader(test_braids, test_targets, both=args.both,
                                                     ohe_inverses=args.ohe_inverses, 
                                                     batch_size=128, shuffle=False)
     elif args.model == 'knot_gnn' :
         train_loader = get_knot_graph_dataloader(train_braids, train_targets, both=args.both,
                                                  pos_neg=args.pos_neg, ohe_inverses=args.ohe_inverses, 
-                                                 batch_size=128, shuffle=True)
+                                                 undirected=args.undirected, batch_size=128, shuffle=True)
         val_loader = get_knot_graph_dataloader(val_braids, val_targets, both=args.both,
                                                pos_neg=args.pos_neg, ohe_inverses=args.ohe_inverses, 
-                                               batch_size=128, shuffle=False)
+                                               undirected=args.undirected, batch_size=128, shuffle=False)
         test_loader = get_knot_graph_dataloader(test_braids, test_targets, both=args.both,
                                                 pos_neg=args.pos_neg, ohe_inverses=args.ohe_inverses, 
-                                                batch_size=128, shuffle=False)
+                                                undirected=args.undirected, batch_size=128, shuffle=False)
 
     # make model 
     num_generators = 12
@@ -143,7 +144,6 @@ def main():
                     num_layers=args.num_layers,dropout=args.dropout, 
                     classification=args.classification, both=args.both, pos_neg=args.pos_neg,
                     ohe_inverses=args.ohe_inverses)
-    print('MODEL', args.model)
 
     lr_monitor = LearningRateMonitor(logging_interval='epoch')
     checkpoint_callback = ModelCheckpoint(monitor="val_l1_loss")

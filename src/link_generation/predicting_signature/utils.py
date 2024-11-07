@@ -63,7 +63,7 @@ def pad_braid_words(braid_words, pad_value=0):
     
     return padded_seqs, lengths_tensor
 
-def braid_word_to_circular_geom_data(braid_word, y, ohe_inverses: bool) :
+def braid_word_to_circular_geom_data(braid_word, y, both: bool, ohe_inverses: bool) :
     '''Converts a braid word (as a list of integers) to a torch_geometric.data.Data object
     containing node features and adjacency list information. Puts braid word generators 
     in a circle each connected to its adjacent neighbors. 
@@ -71,6 +71,7 @@ def braid_word_to_circular_geom_data(braid_word, y, ohe_inverses: bool) :
     parameters: 
     braid_word: braid word as a list 
     y: the target invariant value(s)
+    both: whether to include both pos_neg and ohe_inverses/not ohe_inverses all together 
     ohe_inverses: if True then one-hot-encodes all generators for node features. If False 
     then only one-hot-encodes the positive sigmas and uses -1 in the appropriate spot for 
     their inverses. e.g. if the braid index was 4 and ohe_inverses = True, then sigma_1 = 
@@ -86,12 +87,12 @@ def braid_word_to_circular_geom_data(braid_word, y, ohe_inverses: bool) :
             edges.append([i+1, i])
 
     # construct the node features, with each generator in the braid word as a node
-    node_features = get_node_features(braid_word, both=False, pos_neg=False, ohe_inverses=ohe_inverses)
+    node_features = get_node_features(braid_word, both=both, pos_neg=False, ohe_inverses=ohe_inverses)
 
     # now return the graph Data object
     return Data(x=node_features, edge_index=torch.LongTensor(edges).t(), y=torch.tensor(y))
 
-def braid_word_to_knot_geom_data(braid_word, y, both: bool, pos_neg: bool, ohe_inverses: bool) :
+def braid_word_to_knot_geom_data(braid_word, y, both: bool, pos_neg: bool, ohe_inverses: bool, undirected: bool) :
     '''
     Converts a braid word (as a list of integers) to a torch_geometric.data.Data object
     containing node features and adjacency list information. Each crossing has a directed edge to 
@@ -109,6 +110,7 @@ def braid_word_to_knot_geom_data(braid_word, y, both: bool, pos_neg: bool, ohe_i
     their inverses. e.g. if the braid index was 4 and ohe_inverses = True, then sigma_1 = 
     [1,0,0,0,0,0] and sigma_1^{-1} = [0,0,0,1,0,0]. If ohe_inverses = False then sigma_1 = 
     [1,0,0] and sigma_1^{-1} = [-1,0,0]
+    undirected: whether or not the graph should be directed or undirected
     '''
     edges = []
     abs_braid_word = np.abs(braid_word)
@@ -119,14 +121,20 @@ def braid_word_to_knot_geom_data(braid_word, y, both: bool, pos_neg: bool, ohe_i
         for j in range(1,len(braid_word)) :
             if abs_braid_word[(i+j)%len(braid_word)] == gen :
                 edges.append([i, (i+j)%len(braid_word)]) 
+                if undirected and ([(i+j)%len(braid_word), i] not in edges) :
+                    edges.append([(i+j)%len(braid_word), i])
                 left_out_edge_found = True
                 right_out_edge_found = True
                 break
             elif (abs_braid_word[(i+j)%len(braid_word)] == gen-1) and (not left_out_edge_found) :
                 edges.append([i, (i+j)%len(braid_word)])
+                if undirected and ([(i+j)%len(braid_word), i] not in edges) :
+                    edges.append([(i+j)%len(braid_word), i])
                 left_out_edge_found = True
             elif (abs_braid_word[(i+j)%len(braid_word)] == gen+1) and (not right_out_edge_found) :
                 edges.append([i, (i+j)%len(braid_word)])
+                if undirected and ([(i+j)%len(braid_word), i] not in edges) :
+                    edges.append([(i+j)%len(braid_word), i])
                 right_out_edge_found = True
             if left_out_edge_found and right_out_edge_found :
                 break
@@ -190,13 +198,15 @@ def get_not_ohe_inverses_node_features(braid_word) :
     node_features[torch.arange(len(braid_word)),torch.abs(braid_word)-1] = torch.sign(braid_word).to(torch.float32)
     return node_features 
 
-def get_circular_graph_dataloader(braid_words, targets, ohe_inverses:bool, batch_size:int, shuffle:bool) :
-    data_list = [braid_word_to_circular_geom_data(braid_word, y, ohe_inverses) for braid_word, y in zip(braid_words, targets)]
+def get_circular_graph_dataloader(braid_words, targets, both:bool, ohe_inverses:bool, batch_size:int, shuffle:bool) :
+    data_list = [braid_word_to_circular_geom_data(braid_word, y, both, ohe_inverses) for braid_word, y in zip(braid_words, targets)]
     return DataLoader(data_list, batch_size=batch_size, shuffle=shuffle)
 
-def get_knot_graph_dataloader(braid_words, targets, both:bool, pos_neg:bool, ohe_inverses:bool, batch_size:int, shuffle:bool) :
+def get_knot_graph_dataloader(braid_words, targets, both:bool, pos_neg:bool, ohe_inverses:bool, undirected:bool, 
+                              batch_size:int, shuffle:bool) :
     data_list = [
-        braid_word_to_knot_geom_data(braid_word, y, both, pos_neg, ohe_inverses) for braid_word, y in zip(braid_words, targets)
+        braid_word_to_knot_geom_data(braid_word, y, both, pos_neg, ohe_inverses, undirected) \
+            for braid_word, y in zip(braid_words, targets)
     ]
     return DataLoader(data_list, batch_size=batch_size, shuffle=shuffle, num_workers=79)
 
@@ -237,7 +247,7 @@ def get_experiment_name(args) :
     task = 'cls' if args.classification else 'reg'
     
     preproc = args.preprocessing 
-    if preproc == 'remove_cancelations' :
+    if preproc == 'remove_cancellations' :
         preproc = 'rm'
     elif preproc == 'do_nothing' :
         preproc = ''
@@ -258,4 +268,6 @@ def get_experiment_name(args) :
     
     elif args.model  == 'knot_gnn' :
         ohe = 'pos_neg' if args.pos_neg else 'ohe'
-        return f'{model}_{preproc}_{task}_{ohe}'
+        undir = 'undir' if args.undirected else 'directed'
+        both = 'both' if args.both else 'single'
+        return f'{model}_{preproc}_{task}_{ohe}_{undir}_{both}'
