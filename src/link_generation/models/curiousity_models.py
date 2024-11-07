@@ -10,6 +10,8 @@ from .utils import topk_accuracy
 import numpy as np
 import math
 
+BRAID_INDEX = 7
+
 class NaiveModel(pl.LightningModule):
     '''
     Naively learns a linear model for computing signature based on the 
@@ -496,9 +498,18 @@ class Reformer(pl.LightningModule) :
 
 class GNN(pl.LightningModule):
     def __init__(self, hidden_channels=16, num_heads=2, num_layers=2, dropout=0.2,
-                 classification=False, ohe_inverses=False, num_classes=75):
+                 classification=False, both=False, pos_neg=False, ohe_inverses=False, num_classes=75):
         super(GNN, self).__init__()
-        num_node_features = 12 if ohe_inverses else 6
+        if both and ohe_inverses :
+            num_node_features = (BRAID_INDEX-1)*2 + 2
+        elif both :
+            num_node_features = BRAID_INDEX + 1
+        elif pos_neg :
+            num_node_features = 2
+        elif ohe_inverses :
+            num_node_features = (BRAID_INDEX-1)*2
+        else :
+            num_node_features = BRAID_INDEX-1 
         self.gat1 = TransformerConv(num_node_features, hidden_channels, heads=num_heads)
         self.gat2 = TransformerConv(hidden_channels * num_heads, 2*hidden_channels, heads=num_heads)
         fc_in_dim = 2*hidden_channels*num_heads

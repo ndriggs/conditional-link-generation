@@ -198,7 +198,7 @@ def get_knot_graph_dataloader(braid_words, targets, both:bool, pos_neg:bool, ohe
     data_list = [
         braid_word_to_knot_geom_data(braid_word, y, both, pos_neg, ohe_inverses) for braid_word, y in zip(braid_words, targets)
     ]
-    return DataLoader(data_list, batch_size=batch_size, shuffle=shuffle)
+    return DataLoader(data_list, batch_size=batch_size, shuffle=shuffle, num_workers=79)
 
 
 class BraidDataset(Dataset):

@@ -35,7 +35,7 @@ def parse_args():
     parser.add_argument('--ohe_inverses', type=lambda x: x.lower() == 'true', default=False)
     # only applicable to knot gnn 
     parser.add_argument('--both', type=lambda x: x.lower() == 'true', default=False)
-    parser.add_argument('--pos_neg', type=lambda x: x.lower() == 'true', default=True)
+    parser.add_argument('--pos_neg', type=lambda x: x.lower() == 'true', default=False)
     return parser.parse_args()
 
 def main():
@@ -138,10 +138,12 @@ def main():
         model = Reformer(vocab_size=num_generators+1, d_model=args.d_model, 
                          nhead=args.nheads, num_layers=args.num_layers, max_seq_len=45, 
                          classification=args.classification)
-    elif args.model == 'gnn' :
+    elif args.model in ['circular_gnn', 'knot_gnn'] :
         model = GNN(hidden_channels=args.hidden_size, num_heads=args.nheads,  
                     num_layers=args.num_layers,dropout=args.dropout, 
-                    classification=args.classification, ohe_inverses=args.ohe_inverses)
+                    classification=args.classification, both=args.both, pos_neg=args.pos_neg,
+                    ohe_inverses=args.ohe_inverses)
+    print('MODEL', args.model)
 
     lr_monitor = LearningRateMonitor(logging_interval='epoch')
     checkpoint_callback = ModelCheckpoint(monitor="val_l1_loss")
@@ -151,7 +153,7 @@ def main():
     trainer = pl.Trainer(
         accelerator=args.accelerator,
         # devices=torch.cuda.device_count(),
-        max_epochs=100,
+        max_epochs=1,
         callbacks=[lr_monitor, checkpoint_callback],
         # fast_dev_run=2, # for when testing
         enable_checkpointing=True, # so it returns the best model
