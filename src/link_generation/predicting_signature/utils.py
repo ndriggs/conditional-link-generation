@@ -267,7 +267,7 @@ def get_experiment_name(args) :
         return f'{model}_{preproc}_{task}_d{args.dropout}_l{args.num_layers}_{ohe}'
     
     elif args.model  == 'knot_gnn' :
-        ohe = 'pos_neg' if args.pos_neg else 'ohe'
-        undir = 'undir' if args.undirected else 'directed'
-        both = 'both' if args.both else 'single'
-        return f'{model}_{preproc}_{task}_{ohe}_{undir}_{both}'
+        # ohe = 'pos_neg' if args.pos_neg else 'ohe'
+        # undir = 'undir' if args.undirected else 'directed'
+        # both = 'both' if args.both else 'single'
+        return f'{model}_nheads{args.nheads}_nlayers{args.num_layers}'
