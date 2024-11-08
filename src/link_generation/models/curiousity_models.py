@@ -497,9 +497,11 @@ class Reformer(pl.LightningModule) :
 
 
 class GNN(pl.LightningModule):
-    def __init__(self, hidden_channels=16, num_heads=2, num_layers=2, dropout=0.2,
-                 classification=False, both=False, pos_neg=False, ohe_inverses=False, num_classes=75):
+    def __init__(self, hidden_channels=16, num_heads=4, num_layers=5, dropout=0,
+                 classification=False, both=True, pos_neg=False, ohe_inverses=True, 
+                 double_features=True, device='cuda:0', num_classes=75):
         super(GNN, self).__init__()
+
         if both and ohe_inverses :
             num_node_features = (BRAID_INDEX-1)*2 + 2
         elif both :
@@ -510,16 +512,22 @@ class GNN(pl.LightningModule):
             num_node_features = (BRAID_INDEX-1)*2
         else :
             num_node_features = BRAID_INDEX-1 
-        self.gat1 = TransformerConv(num_node_features, hidden_channels, heads=num_heads)
-        self.gat2 = TransformerConv(hidden_channels * num_heads, 2*hidden_channels, heads=num_heads)
-        fc_in_dim = 2*hidden_channels*num_heads
-        if num_layers >= 3 :
-            self.gat3 = TransformerConv(2*hidden_channels*num_heads, 4*hidden_channels, heads=num_heads)
-            fc_in_dim = 4*hidden_channels*num_heads
-        if num_layers >= 4 :
-            self.gat4 = TransformerConv(4*hidden_channels*num_heads, 4*hidden_channels, heads=num_heads)
-        if num_layers >= 5 :
-            self.gat5 = TransformerConv(4*hidden_channels*num_heads, 4*hidden_channels, heads=num_heads)
+
+        self.conv_layers = [TransformerConv(num_node_features, hidden_channels, heads=num_heads).to(device)]
+        for layer_num in range(2, num_layers+1) :
+            if double_features : # double the number of features at each layer
+                self.conv_layers.append(TransformerConv((2**(layer_num-2))*hidden_channels*num_heads, 
+                                                        (2**(layer_num-1))*hidden_channels, heads=num_heads).to(device))
+            else : # constant number of features at each layer
+                self.conv_layers.append(TransformerConv(hidden_channels*num_heads, 
+                                                        hidden_channels, heads=num_heads).to(device))
+        
+        # calculate the input dimension for the linear layer
+        if double_features :
+            fc_in_dim = (2**(num_layers-1))*hidden_channels*num_heads
+        else : 
+            fc_in_dim = hidden_channels*num_heads
+
         if classification :
             self.fc = torch.nn.Linear(fc_in_dim, num_classes)
         else :
@@ -535,30 +543,16 @@ class GNN(pl.LightningModule):
 
     def forward(self, data):
         # first conv layer 
-        x = self.gat1(data.x, data.edge_index)
+        x = self.conv_layers[0](data.x, data.edge_index)
         x = F.relu(x)
-        x = self.dropout(x)
         
-        # second conv layer
-        x = self.gat2(x, data.edge_index)
-        x = F.relu(x)
-
-        # (optional) third, fourth, and fifth conv layer
-        if self.num_layers >= 3 :
+        for conv_layer in self.conv_layers[1:] :
             x = self.dropout(x)
-            x = self.gat3(x, data.edge_index)
-            x = F.relu(x)
-        if self.num_layers >= 4 : 
-            x = self.dropout(x)
-            x = self.gat4(x, data.edge_index)
-            x = F.relu(x)
-        if self.num_layers >= 5 :
-            x = self.dropout(x)
-            x = self.gat5(x, data.edge_index)
+            x = conv_layer(x, data.edge_index)
             x = F.relu(x)
 
         # pooling and linear layer
-        x = global_max_pool(x, data.batch) 
+        x = global_max_pool(x, data.batch) # TODO: experiment with concating max and mean
         x = self.fc(x)
         
         return x

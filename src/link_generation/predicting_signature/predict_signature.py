@@ -32,10 +32,11 @@ def parse_args():
     # only applicable to transformer encoder, reformer, and gnn
     parser.add_argument('--num_layers', type=int, default=None)
     # only applicable to gnn
-    parser.add_argument('--ohe_inverses', type=lambda x: x.lower() == 'true', default=False)
+    parser.add_argument('--ohe_inverses', type=lambda x: x.lower() == 'true', default=True)
     parser.add_argument('--undirected', type=lambda x: x.lower() == 'true', default=True)
-    # only applicable to knot gnn 
+    parser.add_argument('--double_features', type=lambda x: x.lower() == 'true', default=True)
     parser.add_argument('--both', type=lambda x: x.lower() == 'true', default=False)
+    # only applicable to knot gnn 
     parser.add_argument('--pos_neg', type=lambda x: x.lower() == 'true', default=False)
     return parser.parse_args()
 
@@ -141,9 +142,10 @@ def main():
                          classification=args.classification)
     elif args.model in ['circular_gnn', 'knot_gnn'] :
         model = GNN(hidden_channels=args.hidden_size, num_heads=args.nheads,  
-                    num_layers=args.num_layers,dropout=args.dropout, 
+                    num_layers=args.num_layers, dropout=args.dropout,
                     classification=args.classification, both=args.both, pos_neg=args.pos_neg,
-                    ohe_inverses=args.ohe_inverses)
+                    double_features=args.double_features, ohe_inverses=args.ohe_inverses,
+                    device=args.accelerator)
 
     lr_monitor = LearningRateMonitor(logging_interval='epoch')
     checkpoint_callback = ModelCheckpoint(monitor="val_l1_loss")
