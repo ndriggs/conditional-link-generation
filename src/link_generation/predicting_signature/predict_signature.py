@@ -144,8 +144,7 @@ def main():
         model = GNN(hidden_channels=args.hidden_size, num_heads=args.nheads,  
                     num_layers=args.num_layers, dropout=args.dropout,
                     classification=args.classification, both=args.both, pos_neg=args.pos_neg,
-                    double_features=args.double_features, ohe_inverses=args.ohe_inverses,
-                    device=args.accelerator)
+                    double_features=args.double_features, ohe_inverses=args.ohe_inverses)
 
     lr_monitor = LearningRateMonitor(logging_interval='epoch')
     checkpoint_callback = ModelCheckpoint(monitor="val_l1_loss")
