@@ -19,7 +19,7 @@ class SignatureEnv(gym.Env):
         if reward_type not in ['dense', 'sparse'] :
             raise ValueError(f"Invalid param: {reward_type}. 'reward_type' parameter must be one of 'dense' or 'sparse'")
 
-        self.braid_index = braid_index
+        self.braid_index = braid_index 
         self.B = BraidGroup(self.braid_index)
         self.max_braid_length = 50 # somewhat arbitrary, still computes signature for longer braids
         self.reward_type = reward_type

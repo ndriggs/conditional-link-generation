@@ -170,7 +170,7 @@ class LinkBuilderEnv(gym.Env):
                 elif (k==i) and (k ==j-1):
                     M[self.index(n,i,j),self.index(n,i,j)] = t*q*q
                 elif (i<k) and (k<j - 1):
-                    M[self.index(n,i,j),self.index(n,i,j)] = 1
+                    M[self.index(n,i,j),self.index(n,i,j)] = 1 
                     M[self.index(n,k,k+1),self.index(n,i,j)] = t*q**(k - i)*(q - 1)**2
                 elif (k==j-1):
                     M[self.index(n,i,j-1),self.index(n,i,j)] = 1

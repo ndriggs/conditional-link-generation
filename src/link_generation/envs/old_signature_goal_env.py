@@ -179,7 +179,7 @@ class LinkBuilderEnv(gymnasium_robotics.core.GoalEnv):
         elif info['RuntimeWarning'] :
             return True
         else :
-            return False
+            return False 
 
     def compute_truncated(self, achieved_goal, desired_goal, info):
         if info['braid_word_length'] >= self.max_braid_length :
