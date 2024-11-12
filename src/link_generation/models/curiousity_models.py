@@ -499,7 +499,7 @@ class Reformer(pl.LightningModule) :
 class GNN(pl.LightningModule):
     def __init__(self, hidden_channels=16, num_heads=4, num_layers=5, dropout=0,
                  classification=False, both=True, pos_neg=False, ohe_inverses=True, 
-                 double_features=True, device='cuda:0', num_classes=75):
+                 double_features=True, num_classes=75):
         super(GNN, self).__init__()
 
         if both and ohe_inverses :
@@ -513,14 +513,16 @@ class GNN(pl.LightningModule):
         else :
             num_node_features = BRAID_INDEX-1 
 
-        self.conv_layers = [TransformerConv(num_node_features, hidden_channels, heads=num_heads).to(device)]
+        self.conv_layers = nn.ModuleList([
+            TransformerConv(num_node_features, hidden_channels, heads=num_heads)
+        ])
         for layer_num in range(2, num_layers+1) :
             if double_features : # double the number of features at each layer
                 self.conv_layers.append(TransformerConv((2**(layer_num-2))*hidden_channels*num_heads, 
-                                                        (2**(layer_num-1))*hidden_channels, heads=num_heads).to(device))
+                                                        (2**(layer_num-1))*hidden_channels, heads=num_heads))
             else : # constant number of features at each layer
                 self.conv_layers.append(TransformerConv(hidden_channels*num_heads, 
-                                                        hidden_channels, heads=num_heads).to(device))
+                                                        hidden_channels, heads=num_heads))
         
         # calculate the input dimension for the linear layer
         if double_features :
