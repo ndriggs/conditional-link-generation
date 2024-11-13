@@ -11,6 +11,19 @@ class SignatureEnv(gym.Env):
 
     def __init__(self, reward_type:str, braid_index: int = 7, cirriculum: bool = False,
                  curiousity: bool = False, render_mode:str ='knot_diagram'):
+        '''
+        params:
+        reward_type: either 'dense' which will give the agent a reward everytime the signature
+                     changes or 'sparse' which will only give the agent a reward when it finishes
+                     the episode
+        braid_index: the number of strands to braid
+        cirriculum: whether to blinding train on all the training signatures or start with easy ones
+                    and slowly move to more difficult signatures
+        curiousity: if true then a model is trained to predict the signature of the new knot and an 
+                    intrinsic reward is given for the difference between the predicted and actual signature.
+                    Encourages the agent to explore new parts of the state space.
+        render_mode: not currently working
+        '''
         super(SignatureEnv, self).__init__()
 
         if braid_index < 3 : 
@@ -28,16 +41,16 @@ class SignatureEnv(gym.Env):
         self.curiousity = curiousity
         self.cirriculum = cirriculum
         self.episode_num = 0
-
         
-        if self.cirriculum :
-            self.train_target_signatures = [-3, -1, 1, 3]
-        else :
+        if self.cirriculum : # start off easy
+            self.train_target_signatures = [-2, -1, 1, 2]
+        else : # train is +- 1,2,5,6,9,10,...,37,38
             self.train_target_signatures = [
-                sig for sig in range(-self.max_braid_length+10, self.max_braid_length-9) if sig % 2 == 1
+                sig for sublist in [(-2*i,-2*i+1,2*i-1,2*i) for i in range(1,(self.max_braid_length-10)/2,2)] for sig in sublist
             ]
+        # test is +- 3,4,7,8,11,12,...,35,36
         self.test_target_signatures = [
-            sig for sig in range(-self.max_braid_length+10, self.max_braid_length-9) if (sig % 2 == 0) and sig != 0
+            sig for sublist in [(-2*i,-2*i+1,2*i-1,2*i) for i in range(2,(self.max_braid_length-10)/2,2)] for sig in sublist
         ]
 
         # braid_index = 3 would give 5 actions: {sigma_1, sigma_2, sigma_1^{-1}, sigma_2^{-1}, STOP}
@@ -57,39 +70,53 @@ class SignatureEnv(gym.Env):
                              classification=False, both=True, ohe_inverses=True, 
                              double_features=True)
             
-        
 
     def reset(self, seed: int | None = None, options: dict[str, Any] | None = None): # target_signature: int
-        # initialize the braid word with a random generator, could also experiment with starting with it empty
+        if seed is not None :
+            np.random.seed(seed)
+        
+        # initialize the braid word with a random generator or inverse
         self.braid_word = [Integer(np.random.choice([i for i in range(-self.braid_index+1, self.braid_index)  if i != 0]))]
-        self.braid_word_lk_rep = self.generator_lk_matrices[self.braid_word[0]]
         self.link = Link(self.B(self.braid_word))
         self.current_signature = self.link.signature()
+        self.t_minus_1_signature = self.current_signature
+        self.episode_num += 1
 
-        # self.target_signature = target_signature
-        self.target_signature = np.random.choice(self.target_signatures)
+        if self.cirriculum and (self.episode_num % 20 == 0) and (self.episode_num // 20 <= 9):
+            # add four more slightly farther away signatures every 20 episodes, up to a certain point
+            self.train_target_signatures = [
+                sig for sublist in [(-2*i,-2*i+1,2*i-1,2*i) for i in range(1,((self.episode_num//20)+1)*2,2)] for sig in sublist
+            ]
 
-        # for reward_type = 'dense', setting this equal to target signature gives a large negative reward
-        # on the first step and smaller rewards on subsequent steps. It is unsed for reward_type = 'sparse'
-        self.t_minus_1_signature = self.target_signature 
+        if options is not None and options.get('test', False):
+            self.target_signature = np.random.choice(self.test_target_signatures)
+        else:
+            self.target_signature = np.random.choice(self.train_target_signatures)
 
-        # calculate and return the state + info dict
-        if self.state_rep == 'Lawrence-Krammer' :
-            return self.braid_word_lk_rep, {}
-        elif self.state_rep == 'LK_plus_signatures':
-            return np.concatenate([np.array([self.target_signature, self.current_signature]),
-                                   self.braid_word_lk_rep.flatten()]), {}
+        observation = {
+            'observation': self.braid_word,
+            'achieved_goal': self.current_signature,
+            'desired_goal': self.target_signature
+        }
+
+        return observation, {}
+
 
     def step(self, action):
-        # if a generator was appended, i.e. if the STOP token wasn't selected
-        if action < (self.braid_index-1)*2 :
-            # I followed the convention used in https://arxiv.org/abs/1610.05744 for ordering the generators
-            # sigma_1, sigma_2, ..., sigma_n, sigma_{-1}, sigma_{-2}, ..., sigma_{-n}
-            generator = (action % (self.braid_index-1)) + 1
-            if action >= self.braid_index - 1 :
-                generator = -generator
-            self.braid_word.append(Integer(generator))
-            self.braid_word_lk_rep = self.braid_word_lk_rep @ self.generator_lk_matrices[generator]
+        # the STOP token was selected
+        if action == 0 :
+            terminated = True
+            truncated = False
+
+            # calculate the reward
+            if self.reward_type == 'dense' :
+                reward = 0
+            elif self.reward_type == 'sparse' :
+                distance_from_goal = np.abs(self.current_signature - self.target_signature)
+                reward = 1 / (1 + distance_from_goal)
+        
+        else : 
+            self.braid_word.append(Integer(action))
             self.link = Link(self.B(self.braid_word))
             self.current_signature = self.link.signature()
 
@@ -108,23 +135,13 @@ class SignatureEnv(gym.Env):
 
             self.t_minus_1_signature = self.current_signature
 
-        else : # the STOP action was selected
-            terminated = True
-            truncated = False
+        observation = {
+            'observation': self.braid_word,
+            'achieved_goal': self.current_signature,
+            'desired_goal': self.target_signature
+        }
 
-            # calculate the reward
-            if self.reward_type == 'dense' :
-                reward = 0
-            elif self.reward_type == 'sparse' :
-                reward = -np.abs(self.current_signature - self.target_signature)
-
-        if self.state_rep == 'Lawrence-Krammer' :
-            state = self.braid_word_lk_rep
-        elif self.state_rep == 'LK_plus_signatures' :
-            state = np.concatenate([np.array([self.target_signature, self.current_signature]),
-                                    self.braid_word_lk_rep.flatten()])
-
-        return state, reward, terminated, truncated, {}
+        return observation, reward, terminated, truncated, {}
 
     def render(self):
         self.link.plot()
