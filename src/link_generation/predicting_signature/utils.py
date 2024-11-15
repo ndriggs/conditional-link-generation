@@ -149,13 +149,15 @@ def braid_word_to_knot_geom_data(braid_word, y, both: bool, pos_neg: bool, ohe_i
 
 
 
-def get_node_features(braid_word, both: bool, pos_neg: bool, ohe_inverses: bool) :
+def get_node_features(braid_word, both: bool, pos_neg: bool, ohe_inverses: bool) : # , laplacian:int=0, edges=None
     '''
     braid_word: braid word as a list of integers
     both: whether or not to include both positive/negative crossing info and generator ohe-ing
     pos_neg: if true returns 2 node features. The positivity and negativity of the crossing
     ohe_inverses: if true returns each generator one hot encoded separately, else returns the 
     inverses as -1 in the spot of the corresponding positive generator
+    laplacian: includes the k first eigenvectors as node features, adds none if set to 0
+    edges: edges of the knot graph
     '''
     braid_word = torch.tensor(braid_word)
     if both : 
