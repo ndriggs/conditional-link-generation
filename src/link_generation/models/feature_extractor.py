@@ -24,7 +24,7 @@ class BraidFeaturesExtractor(BaseFeaturesExtractor):
         self.braid_gnn = GNN(hidden_channels=hidden_channels, num_heads=num_heads, 
                              num_layers=num_layers, dropout=0,
                              classification=False, both=True, ohe_inverses=True, 
-                             double_features=True)
+                             double_features=True, return_features=True)
         
         # Should I also experiment with added the difference between the signatures 
         # and a bool that says if the exact signature has been achieved?
@@ -40,14 +40,16 @@ class BraidFeaturesExtractor(BaseFeaturesExtractor):
         )
 
     def forward(self, observations) -> torch.Tensor:
-        batch = Batch.from_data_list([self._create_braid_graph(braid_word) for braid_word in observations['observation']])
+        batch = Batch.from_data_list([self._create_braid_graph(state) for state in observations['observation']]).to('cuda')
         braid_features = self.braid_gnn(batch)
         # goal_features = self.goal_net(torch.cat([observations['achieved_goal'], 
         #                                          observations['desired_goal']], dim=1))
         combined = torch.cat([braid_features, observations['desired_goal']], dim=1)
         return self.combine_net(combined)
     
-    def _create_braid_graph(self, braid_word) :
+    def _create_braid_graph(self, state) :
+        braid_word = state[state != 0]
+
         # remove all adjacent inverse cancellations
         if len(braid_word) > 2 : 
             stack = []
@@ -56,11 +58,11 @@ class BraidFeaturesExtractor(BaseFeaturesExtractor):
                     stack.pop()
                 else:
                     stack.append(generator)
-            braid_word = stack
+            braid_word = torch.tensor(stack)
 
         # calculate edges for braid graph
         edges = []
-        abs_braid_word = np.abs(braid_word)
+        abs_braid_word = torch.abs(braid_word)
         for i in range(len(braid_word)) :
             gen = abs_braid_word[i]
             left_out_edge_found = False
@@ -82,6 +84,11 @@ class BraidFeaturesExtractor(BaseFeaturesExtractor):
                     right_out_edge_found = True
                 if left_out_edge_found and right_out_edge_found :
                     break
+
+        # bad news if all braid graphs in batch don't have any edges, so if there's no edges we give
+        # each crossing a self edge
+        if edges == [] :
+            edges = [[i,i] for i in range(len(braid_word))]
 
         node_features = get_node_features(braid_word, both=True, pos_neg=False, ohe_inverses=True)
 

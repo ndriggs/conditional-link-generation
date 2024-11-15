@@ -499,8 +499,9 @@ class Reformer(pl.LightningModule) :
 class GNN(pl.LightningModule):
     def __init__(self, hidden_channels=16, num_heads=4, num_layers=5, dropout=0,
                  classification=False, both=True, pos_neg=False, ohe_inverses=True, 
-                 double_features=True, num_classes=75):
+                 double_features=True, return_features=False, num_classes=75):
         super(GNN, self).__init__()
+        self.return_features = return_features
 
         if both and ohe_inverses :
             num_node_features = (BRAID_INDEX-1)*2 + 2
@@ -555,9 +556,10 @@ class GNN(pl.LightningModule):
 
         # pooling and linear layer
         x = global_max_pool(x, data.batch) # TODO: experiment with concating max and mean
-        x = self.fc(x)
-        
-        return x
+        if self.return_features :
+            return x
+        else :
+            return self.fc(x)
 
     def training_step(self, batch, batch_idx):
         y_hat = self(batch)

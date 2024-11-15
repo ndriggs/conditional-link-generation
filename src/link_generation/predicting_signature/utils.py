@@ -159,7 +159,8 @@ def get_node_features(braid_word, both: bool, pos_neg: bool, ohe_inverses: bool)
     laplacian: includes the k first eigenvectors as node features, adds none if set to 0
     edges: edges of the knot graph
     '''
-    braid_word = torch.tensor(braid_word)
+    if not isinstance(braid_word, torch.Tensor) :
+        braid_word = torch.tensor(braid_word)
     if both : 
         if ohe_inverses :
             node_features = torch.zeros((len(braid_word),(BRAID_INDEX-1)*2 + 2))

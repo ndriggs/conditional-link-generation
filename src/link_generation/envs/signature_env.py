@@ -9,8 +9,8 @@ class SignatureEnv(gym.Env):
 
     metadata = {"render_modes": ["knot_diagram", "braid_word"], "render_fps": 2}
 
-    def __init__(self, reward_type:str, braid_index: int = 7, cirriculum: bool = False,
-                 curiousity: bool = False, render_mode:str ='knot_diagram'):
+    def __init__(self, reward_type:str, seed:int, braid_index: int = 7, cirriculum: bool = False,
+                 curiousity: bool = False, test: bool = False, render_mode:str ='knot_diagram'):
         '''
         params:
         reward_type: either 'dense' which will give the agent a reward everytime the signature
@@ -22,6 +22,7 @@ class SignatureEnv(gym.Env):
         curiousity: if true then a model is trained to predict the signature of the new knot and an 
                     intrinsic reward is given for the difference between the predicted and actual signature.
                     Encourages the agent to explore new parts of the state space.
+        test: if True draws target signatures from the test distribution, otherwise from the train distribution
         render_mode: not currently working
         '''
         super(SignatureEnv, self).__init__()
@@ -32,6 +33,7 @@ class SignatureEnv(gym.Env):
         if reward_type not in ['dense', 'sparse'] :
             raise ValueError(f"Invalid param: {reward_type}. 'reward_type' parameter must be one of 'dense' or 'sparse'")
 
+        np.random.seed(seed)
         self.braid_index = braid_index 
         self.B = BraidGroup(self.braid_index)
         self.max_braid_length = 50 # somewhat arbitrary, still computes signature for longer braids
@@ -40,9 +42,17 @@ class SignatureEnv(gym.Env):
         self.render_mode = render_mode
         self.curiousity = curiousity
         self.cirriculum = cirriculum
+        self.test = test
         self.episode_num = 0
-        
-        if self.cirriculum : # start off easy
+
+        if self.test :
+            # test is +- 3,4,7,8,11,12,...,35,36
+            self.target_signatures = [
+                sig for sublist in \
+                    [(-2*i,-2*i+1,2*i-1,2*i) for i in range(2,np.round((self.max_braid_length-10)/2).astype(int),2)] \
+                        for sig in sublist
+            ]
+        elif self.cirriculum : # start off easy
             self.train_target_signatures = [-2, -1, 1, 2]
         else : # train is +- 1,2,5,6,9,10,...,37,38
             self.train_target_signatures = [
@@ -50,12 +60,7 @@ class SignatureEnv(gym.Env):
                     [(-2*i,-2*i+1,2*i-1,2*i) for i in range(1,np.round((self.max_braid_length-10)/2).astype(int),2)] \
                         for sig in sublist
             ]
-        # test is +- 3,4,7,8,11,12,...,35,36
-        self.test_target_signatures = [
-            sig for sublist in \
-                [(-2*i,-2*i+1,2*i-1,2*i) for i in range(2,np.round((self.max_braid_length-10)/2).astype(int),2)] \
-                    for sig in sublist
-        ]
+        
 
         # braid_index = 3 would give 5 actions: {sigma_1, sigma_2, sigma_1^{-1}, sigma_2^{-1}, STOP}
         # 0 represents the STOP action, all others are what you'd expect
@@ -64,7 +69,10 @@ class SignatureEnv(gym.Env):
         # create the observation space
         signature_space = spaces.Box(low=-self.max_braid_length, high=self.max_braid_length, shape=(1,), dtype=np.int32)
         self.observation_space = spaces.Dict({
-            'observation': spaces.Sequence(spaces.Discrete((self.braid_index-1)*2 + 1, start=-self.braid_index+1)),
+            # Sequence observation space would be ideal, but it didn't seem to vibe well with stablebaselines algorithms
+            # 'observation': spaces.Sequence(spaces.Discrete((self.braid_index-1)*2 + 1, start=-self.braid_index+1)),
+            'observation': spaces.Box(low=-self.braid_index+1, high=self.braid_index-1, 
+                                      shape=(self.max_braid_length,), dtype=np.int32),
             'achieved_goal': signature_space,
             'desired_goal': signature_space
         })
@@ -86,21 +94,20 @@ class SignatureEnv(gym.Env):
         self.t_minus_1_signature = self.current_signature
         self.episode_num += 1
 
-        if self.cirriculum and (self.episode_num % 20 == 0) and (self.episode_num // 20 <= 9):
+        if self.cirriculum and (self.episode_num % 20 == 0) and (self.episode_num // 20 <= 9) and not self.test:
             # add four more slightly farther away signatures every 20 episodes, up to a certain point
-            self.train_target_signatures = [
+            self.target_signatures = [
                 sig for sublist in [(-2*i,-2*i+1,2*i-1,2*i) for i in range(1,((self.episode_num//20)+1)*2,2)] for sig in sublist
             ]
 
-        if options is not None and options.get('test', False):
-            self.target_signature = np.random.choice(self.test_target_signatures)
-        else:
-            self.target_signature = np.random.choice(self.train_target_signatures)
+        self.target_signature = np.random.choice(self.target_signatures)
 
+        state = np.zeros(self.max_braid_length, dtype=np.int32)
+        state[:len(self.braid_word)] = self.braid_word
         observation = {
-            'observation': self.braid_word,
-            'achieved_goal': self.current_signature,
-            'desired_goal': self.target_signature
+            'observation': state,
+            'achieved_goal': np.array([self.current_signature], dtype=np.int32),
+            'desired_goal': np.array([self.target_signature], dtype=np.int32)
         }
 
         return observation, {}
@@ -139,10 +146,12 @@ class SignatureEnv(gym.Env):
 
             self.t_minus_1_signature = self.current_signature
 
+        state = np.zeros(self.max_braid_length, dtype=np.int32)
+        state[:len(self.braid_word)] = self.braid_word
         observation = {
-            'observation': self.braid_word,
-            'achieved_goal': self.current_signature,
-            'desired_goal': self.target_signature
+            'observation': state,
+            'achieved_goal': np.array([self.current_signature], dtype=np.int32),
+            'desired_goal': np.array([self.target_signature], dtype=np.int32)
         }
 
         return observation, reward, terminated, truncated, {}
