@@ -53,9 +53,9 @@ class SignatureEnv(gym.Env):
                         for sig in sublist
             ]
         elif self.cirriculum : # start off easy
-            self.train_target_signatures = [-2, -1, 1, 2]
+            self.target_signatures = [-2, -1, 1, 2]
         else : # train is +- 1,2,5,6,9,10,...,37,38
-            self.train_target_signatures = [
+            self.target_signatures = [
                 sig for sublist in \
                     [(-2*i,-2*i+1,2*i-1,2*i) for i in range(1,np.round((self.max_braid_length-10)/2).astype(int),2)] \
                         for sig in sublist
