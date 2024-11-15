@@ -1,6 +1,6 @@
 from gymnasium.envs.registration import register
 
 register(
-    id='LinkBuilderEnv-v0',  
-    entry_point='envs.signature_environment:LinkBuilderEnv', 
+    id='SignatureEnv-v0',  
+    entry_point='link_generation.envs.signature_env:SignatureEnv', 
 )

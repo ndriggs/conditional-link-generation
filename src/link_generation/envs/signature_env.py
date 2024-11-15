@@ -2,7 +2,7 @@ import gymnasium as gym
 from gymnasium import spaces
 from typing import Any
 from sage.all import BraidGroup, Link, Integer
-from link_generation.models import GNN
+from link_generation.models.curiousity_models import GNN
 import numpy as np
 
 class SignatureEnv(gym.Env):
@@ -46,11 +46,15 @@ class SignatureEnv(gym.Env):
             self.train_target_signatures = [-2, -1, 1, 2]
         else : # train is +- 1,2,5,6,9,10,...,37,38
             self.train_target_signatures = [
-                sig for sublist in [(-2*i,-2*i+1,2*i-1,2*i) for i in range(1,(self.max_braid_length-10)/2,2)] for sig in sublist
+                sig for sublist in \
+                    [(-2*i,-2*i+1,2*i-1,2*i) for i in range(1,np.round((self.max_braid_length-10)/2).astype(int),2)] \
+                        for sig in sublist
             ]
         # test is +- 3,4,7,8,11,12,...,35,36
         self.test_target_signatures = [
-            sig for sublist in [(-2*i,-2*i+1,2*i-1,2*i) for i in range(2,(self.max_braid_length-10)/2,2)] for sig in sublist
+            sig for sublist in \
+                [(-2*i,-2*i+1,2*i-1,2*i) for i in range(2,np.round((self.max_braid_length-10)/2).astype(int),2)] \
+                    for sig in sublist
         ]
 
         # braid_index = 3 would give 5 actions: {sigma_1, sigma_2, sigma_1^{-1}, sigma_2^{-1}, STOP}

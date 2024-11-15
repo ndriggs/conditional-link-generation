@@ -28,23 +28,23 @@ class BraidFeaturesExtractor(BaseFeaturesExtractor):
         
         # Should I also experiment with added the difference between the signatures 
         # and a bool that says if the exact signature has been achieved?
-        self.signature_net = nn.Sequential(
-            nn.Linear(2, 2),  # 2 is for achieved and desired goals
-            nn.ReLU(),
-            nn.Linear(2, 2)
-        )
+        # self.signature_net = nn.Sequential(
+        #     nn.Linear(2, 2),  # 2 is for achieved and desired goals
+        #     nn.ReLU(),
+        #     nn.Linear(2, 2)
+        # )
         
         self.combine_net = nn.Sequential(
-            nn.Linear(hidden_channels*(2**(num_layers-1))*num_heads + 2, features_dim),
+            nn.Linear(hidden_channels*(2**(num_layers-1))*num_heads + 1, features_dim),
             nn.ReLU()
         )
 
     def forward(self, observations) -> torch.Tensor:
         batch = Batch.from_data_list([self._create_braid_graph(braid_word) for braid_word in observations['observation']])
         braid_features = self.braid_gnn(batch)
-        goal_features = self.goal_net(torch.cat([observations['achieved_goal'], 
-                                                 observations['desired_goal']], dim=1))
-        combined = torch.cat([braid_features, goal_features], dim=1)
+        # goal_features = self.goal_net(torch.cat([observations['achieved_goal'], 
+        #                                          observations['desired_goal']], dim=1))
+        combined = torch.cat([braid_features, observations['desired_goal']], dim=1)
         return self.combine_net(combined)
     
     def _create_braid_graph(self, braid_word) :
