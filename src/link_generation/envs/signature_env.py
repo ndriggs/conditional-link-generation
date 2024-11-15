@@ -127,7 +127,10 @@ class SignatureEnv(gym.Env):
                 reward = 1 / (1 + distance_from_goal)
         
         else : 
-            self.braid_word.append(Integer(action))
+            if self.action_space.contains(action) :
+                self.braid_word.append(Integer(action))
+            else : # is a generator inverse
+                self.braid_word.append(Integer(-(action - (self.braid_index-1))))
             self.link = Link(self.B(self.braid_word))
             self.current_signature = self.link.signature()
 
