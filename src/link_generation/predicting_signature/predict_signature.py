@@ -31,13 +31,15 @@ def parse_args():
     parser.add_argument('--nheads', type=int, default=2)
     # only applicable to transformer encoder, reformer, and gnn
     parser.add_argument('--num_layers', type=int, default=None)
-    # only applicable to gnn
+    # only applicable to both gnn
     parser.add_argument('--ohe_inverses', type=lambda x: x.lower() == 'true', default=True)
     parser.add_argument('--undirected', type=lambda x: x.lower() == 'true', default=True)
     parser.add_argument('--double_features', type=lambda x: x.lower() == 'true', default=True)
     parser.add_argument('--both', type=lambda x: x.lower() == 'true', default=False)
     # only applicable to knot gnn 
     parser.add_argument('--pos_neg', type=lambda x: x.lower() == 'true', default=False)
+    parser.add_argument('--laplacian', type=lambda x: x.lower() == 'true', default=False)
+    parser.add_argument('--k', type=int, default=0)
     return parser.parse_args()
 
 def main():
@@ -113,13 +115,16 @@ def main():
     elif args.model == 'knot_gnn' :
         train_loader = get_knot_graph_dataloader(train_braids, train_targets, both=args.both,
                                                  pos_neg=args.pos_neg, ohe_inverses=args.ohe_inverses, 
-                                                 undirected=args.undirected, batch_size=128, shuffle=True)
+                                                 undirected=args.undirected, laplacian=args.laplacian,
+                                                 k=args.k, batch_size=128, shuffle=True)
         val_loader = get_knot_graph_dataloader(val_braids, val_targets, both=args.both,
                                                pos_neg=args.pos_neg, ohe_inverses=args.ohe_inverses, 
-                                               undirected=args.undirected, batch_size=128, shuffle=False)
+                                               undirected=args.undirected, laplacian=args.laplacian,
+                                               k=args.k, batch_size=128, shuffle=False)
         test_loader = get_knot_graph_dataloader(test_braids, test_targets, both=args.both,
                                                 pos_neg=args.pos_neg, ohe_inverses=args.ohe_inverses, 
-                                                undirected=args.undirected, batch_size=128, shuffle=False)
+                                                undirected=args.undirected, laplacian=args.laplacian,
+                                                k=args.k, batch_size=128, shuffle=False)
 
     # make model 
     num_generators = 12
