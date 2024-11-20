@@ -499,20 +499,23 @@ class Reformer(pl.LightningModule) :
 class GNN(pl.LightningModule):
     def __init__(self, hidden_channels=16, num_heads=4, num_layers=5, dropout=0,
                  classification=False, both=True, pos_neg=False, ohe_inverses=True, 
-                 double_features=True, return_features=False, num_classes=75):
+                 laplacian=False, k=0, double_features=True, return_features=False, 
+                 num_classes=75):
         super(GNN, self).__init__()
         self.return_features = return_features
 
-        if both and ohe_inverses :
-            num_node_features = (BRAID_INDEX-1)*2 + 2
+        if laplacian :
+            num_node_features = k
+        elif both and ohe_inverses :
+            num_node_features = (BRAID_INDEX-1)*2 + 2 + k
         elif both :
-            num_node_features = BRAID_INDEX + 1
+            num_node_features = BRAID_INDEX + 1 + k
         elif pos_neg :
-            num_node_features = 2
+            num_node_features = 2 + k
         elif ohe_inverses :
-            num_node_features = (BRAID_INDEX-1)*2
+            num_node_features = (BRAID_INDEX-1)*2 + k
         else :
-            num_node_features = BRAID_INDEX-1 
+            num_node_features = BRAID_INDEX-1 + k
 
         self.conv_layers = nn.ModuleList([
             TransformerConv(num_node_features, hidden_channels, heads=num_heads)

@@ -167,50 +167,52 @@ def get_node_features(braid_word, both: bool, pos_neg: bool, ohe_inverses: bool,
     if not isinstance(braid_word, torch.Tensor) :
         braid_word = torch.tensor(braid_word)
     if laplacian :
-        node_features = get_laplacian_positional_ecoding(edges, k)
+        node_features = get_laplacian_positional_ecoding(edges, k, len(braid_word))
     elif both : 
         if ohe_inverses :
             node_features = torch.zeros((len(braid_word),(BRAID_INDEX-1)*2 + 2 + k))
-            node_features[:,:k] = get_laplacian_positional_ecoding(edges, k)
+            node_features[:,:k] = get_laplacian_positional_ecoding(edges, k, len(braid_word))
             node_features[:,k:-2] = get_ohe_inverses_node_features(braid_word)
             node_features[:,-2:] = get_pos_neg_node_features(braid_word)
         else : 
             node_features = torch.zeros((len(braid_word),BRAID_INDEX+1+k))
-            node_features[:,:k] = get_laplacian_positional_ecoding(edges, k)
+            node_features[:,:k] = get_laplacian_positional_ecoding(edges, k, len(braid_word))
             node_features[:,k:-2] = get_not_ohe_inverses_node_features(braid_word)
             node_features[:,-2:] = get_pos_neg_node_features(braid_word)
     elif pos_neg : # only encode if the crossing is a positive or negative crossing
         node_features = torch.zeros((len(braid_word), 2+k))
-        node_features[:,:k] = get_laplacian_positional_ecoding(edges, k)
+        node_features[:,:k] = get_laplacian_positional_ecoding(edges, k, len(braid_word))
         node_features[:,k:] = get_pos_neg_node_features(braid_word)
     elif ohe_inverses :
         node_features = torch.zeros((len(braid_word),(BRAID_INDEX-1)*2 + k))
-        node_features[:,:k] = get_laplacian_positional_ecoding(edges, k)
+        node_features[:,:k] = get_laplacian_positional_ecoding(edges, k, len(braid_word))
         node_features[:,k:] = get_ohe_inverses_node_features(braid_word)
     else : 
         node_features = torch.zeros((len(braid_word),BRAID_INDEX-1+k))
-        node_features[:,:k] = get_laplacian_positional_ecoding(edges, k)
+        node_features[:,:k] = get_laplacian_positional_ecoding(edges, k, len(braid_word))
         node_features[:,k:] = get_not_ohe_inverses_node_features(braid_word)
     return node_features
 
-def get_laplacian_positional_ecoding(edges, k) :
+def get_laplacian_positional_ecoding(edges, k, num_nodes) :
     ''''
     Gets the laplcian positional encoding of the graph, i.e. returns 
     the first k eigenvectors of the graph laplacian. 
     '''
-    if k == 0 :
-        return torch.zeros((np.max(edges)+1, 0))
-    A = np.zeros((np.max(edges)+1,np.max(edges)+1))
+    if (k == 0) :
+        return torch.zeros((num_nodes, 0))
+    A = np.zeros((num_nodes,num_nodes))
     for edge in edges :
         A[edge[1], edge[0]] = 1
     D = np.diag(np.sum(A, axis=1))
     L = D - A
     eigvals, eigvecs = np.linalg.eig(L)
+    if num_nodes < k :
+        return torch.cat([torch.tensor(eigvecs[:,eigvals.argsort()[::-1][:k]]), torch.zeros((num_nodes, k-num_nodes))],dim=1)
     return torch.tensor(eigvecs[:,eigvals.argsort()[::-1][:k]])
 
 
 def get_pos_neg_node_features(braid_word) :
-    '''One hot encodes whether each "node" (braid generator) is a postive crossing or 
+    '''One hot encodes whether each "node" (braid letter) is a postive crossing or 
     negative crossing'''
     node_features = torch.zeros((len(braid_word), 2))
     node_features[:,0] = (torch.sign(braid_word) > 0).to(torch.float32)
