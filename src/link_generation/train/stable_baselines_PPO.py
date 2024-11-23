@@ -21,10 +21,10 @@ def parse_args():
 def main() :
     args = parse_args()
     vec_env = make_vec_env("SignatureEnv-v0", n_envs=4, 
-                        env_kwargs={'reward_type': args.reward_type,
-                                    'seed': args.seed,
-                                    'cirriculum': args.cirriculum,
-                                    'test': False})
+                           env_kwargs={'reward_type': args.reward_type,
+                                       'seed': args.seed,
+                                       'cirriculum': args.cirriculum,
+                                       'test': False})
 
     test_vec_env = make_vec_env("SignatureEnv-v0", n_envs=4, 
                                 env_kwargs={'reward_type': 'sparse',
@@ -40,12 +40,12 @@ def main() :
     model = PPO("MultiInputPolicy", vec_env, policy_kwargs=policy_kwargs, verbose=1)
 
     mean_rewards, std_rewards = [], []
-    for _ in range(250) :
-        mean_reward, std_reward = evaluate_policy(model,test_vec_env,n_eval_episodes=200)
+    for _ in range(100) :
+        mean_reward, std_reward = evaluate_policy(model,test_vec_env,n_eval_episodes=2) # 200
         mean_rewards.append(mean_reward)
         std_rewards.append(std_reward)
         print(f"mean_reward: {mean_reward:.2f} +/- {std_reward:.2f}")
-        model.learn(total_timesteps=100)
+        model.learn(total_timesteps=250)
     model.save("ppo_link_builder")
     np.save('PPO_mean_reward.npy', np.array(mean_rewards))
     np.save('PPO_std_reward.npy', np.array(std_rewards))

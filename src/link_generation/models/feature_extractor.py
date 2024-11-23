@@ -44,7 +44,13 @@ class BraidFeaturesExtractor(BaseFeaturesExtractor):
         braid_features = self.braid_gnn(batch)
         # goal_features = self.goal_net(torch.cat([observations['achieved_goal'], 
         #                                          observations['desired_goal']], dim=1))
-        combined = torch.cat([braid_features, observations['desired_goal']], dim=1)
+        # print('braid features:', braid_features.shape)
+        # print('target_signatures:', observations['desired_goal'].shape)
+        try :
+            combined = torch.cat([braid_features, observations['desired_goal']], dim=1)
+        except RuntimeError :
+            for state in observations['observation'] :
+                print(state)
         return self.combine_net(combined)
     
     def _create_braid_graph(self, state) :
@@ -58,7 +64,8 @@ class BraidFeaturesExtractor(BaseFeaturesExtractor):
                     stack.pop()
                 else:
                     stack.append(generator)
-            braid_word = torch.tensor(stack)
+            if len(stack) > 0 :
+                braid_word = torch.tensor(stack)
 
         # calculate edges for braid graph
         edges = []
@@ -90,6 +97,6 @@ class BraidFeaturesExtractor(BaseFeaturesExtractor):
         if edges == [] :
             edges = [[i,i] for i in range(len(braid_word))]
 
-        node_features = get_node_features(braid_word, both=True, pos_neg=False, ohe_inverses=True)
+        node_features = get_node_features(braid_word, both=True, pos_neg=False, ohe_inverses=True, laplacian=False, edges=edges)
 
         return Data(x=node_features, edge_index=torch.LongTensor(edges).t())
