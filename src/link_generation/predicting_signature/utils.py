@@ -6,12 +6,17 @@ import torch
 import numpy as np
 from typing import Union
 import json
+import os
 
 BRAID_INDEX = 7
 
 def load_braid_words(train_test_or_val: str):
-    with open(f'src/link_generation/predicting_signature/{train_test_or_val}_braids.txt', 'r') as f :
-        braid_words = json.load(f)
+    if os.getcwd() == '/home/nattd/repos/link-generation/src/link_generation/predicting_signature' :
+        with open(f'{train_test_or_val}_braids.txt', 'r') as f :
+            braid_words = json.load(f)
+    else :
+        with open(f'src/link_generation/predicting_signature/{train_test_or_val}_braids.txt', 'r') as f :
+            braid_words = json.load(f)
     return braid_words
 
 def remove_cancelations(train_test_or_val: str) :
