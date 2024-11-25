@@ -8,3 +8,4 @@ __pycache__/
 *.sh
 *.egg-info
 logs/*
+src/link_generation/train/logs/*
