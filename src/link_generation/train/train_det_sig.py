@@ -11,6 +11,8 @@ def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--state_rep', type=str, default='braid')
     parser.add_argument('--reward_type', type=str, default='sparse')
+    parser.add_argument('--braid_index', type=int, default=7)
+    parser.add_argument('--max_braid_length', type=int, default=60)
     parser.add_argument('--w1', type=float, default=0.7)
     parser.add_argument('--braid_or_knot_graph', type=str, default='braid')
     parser.add_argument('--seed', type=int, default=15)
@@ -21,9 +23,9 @@ def parse_args():
 
 def get_exp_name(args) :
     if args.state_rep == 'braid' :
-        return f'braid_{args.reward_type}_{args.w1}_{args.braid_or_knot_graph}_{args.seed}_{args.num_heads}_{args.num_layers}_{args.hidden_channels}'
+        return f'braid_{args.reward_type}_{args.braid_index}_{args.w1}_{args.braid_or_knot_graph}_{args.seed}_{args.num_heads}_{args.num_layers}_{args.hidden_channels}'
     elif args.state_rep == 'ohe' :
-        return f'ohe_{args.reward_type}_{args.w1}_{args.seed}'
+        return f'ohe_{args.reward_type}_{args.braid_index}_{args.w1}_{args.seed}'
     
 class LogSigAndLogDet(BaseCallback):
     def __init__(self, verbose=0):
@@ -32,43 +34,50 @@ class LogSigAndLogDet(BaseCallback):
         self.log_dets = []
 
     def _on_step(self):
-        env = self.training_env.envs[0]
-        
-        # Check if the episode has ended
-        if self.training_env.get_attr("_episode_ended")[0]:
-            sig = env.current_signature
-            log_det = np.log1p(env.current_det)
-            self.sigs.append(sig)
-            self.dets.append(log_det)
-            
-            # Log all variables to TensorBoard
-            self.logger.record("signature", sig)
-            self.logger.record("log_determinant", log_det)
+        for info in self.locals['infos'] :
+            signature = info.get('signature', None)
+            determinant = info.get('determinant', None)
+            if (signature is not None) and (determinant is not None):
+                # Log all variables to TensorBoard
+                self.logger.record("abs_signature", np.abs(signature))
+                self.logger.record("log_determinant", np.log1p(determinant))
+                self.sigs.append(np.abs(signature))
+                self.log_dets.append(np.log1p(determinant))
         
         return True
 
 def main() :
     args = parse_args()
 
-    vec_env = make_vec_env("SigDetEnv-v0", n_envs=4, 
+    vec_env = make_vec_env("SigDetEnv-v0", n_envs=1, 
                            env_kwargs={'state_rep': args.state_rep,
                                        'reward_type': args.reward_type,
+                                       'braid_index': args.braid_index,
+                                       'max_braid_length': args.max_braid_length,
                                        'seed': args.seed})
     
     if args.state_rep == 'braid' : 
+        features_dim = (2**(args.num_layers-1))*args.hidden_channels*args.num_heads
         policy_kwargs = dict(
             features_extractor_class=ObsBraidFeaturesExtractor,
             features_extractor_kwargs=dict(num_heads=args.num_heads,
                                            num_layers=args.num_layers,
                                            hidden_channels=args.hidden_channels,
-                                           braid_or_knot_graph=args.braid_or_knot_graph),
+                                           braid_or_knot_graph=args.braid_or_knot_graph,
+                                           braid_index=args.braid_index),
+            net_arch=dict(pi=[2*features_dim, 2*features_dim], vf=[2*features_dim, 2*features_dim])
         )
-        model = PPO("MlpPolicy", vec_env, policy_kwargs=policy_kwargs, verbose=1, 
+        model = PPO("MlpPolicy", vec_env, n_steps=256, policy_kwargs=policy_kwargs, verbose=1, 
                     tensorboard_log='src/link_generation/train/logs/')
     elif args.state_rep == 'ohe' :
-        model = PPO("MlpPolicy", vec_env, verbose=1, 
+        features_dim = 2*(args.braid_index-1)*args.max_braid_length
+        policy_kwargs = dict(
+            net_arch=dict(pi=[2*features_dim, 2*features_dim], vf=[2*features_dim, 2*features_dim])
+        )
+        model = PPO("MlpPolicy", vec_env, n_steps=256, verbose=1, 
                     tensorboard_log='src/link_generation/train/logs/')
-    model.learn(5000, callback=LogSigAndLogDet(), tb_log_name=get_exp_name(args))
+    model.learn(90000, callback=LogSigAndLogDet(), tb_log_name=get_exp_name(args))
+    model.save('src/link_generation/train/models/'+get_exp_name(args))
 
 if __name__ == '__main__' :
     main()
