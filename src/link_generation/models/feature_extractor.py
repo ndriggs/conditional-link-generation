@@ -103,8 +103,8 @@ class GoalBraidFeaturesExtractor(BaseFeaturesExtractor):
     
 
 class ObsBraidFeaturesExtractor(BaseFeaturesExtractor):
-    def __init__(self, observation_space: gym.spaces.Dict, 
-                 num_heads: int, num_layers: int, hidden_channels: int, braid_or_knot_graph: str):
+    def __init__(self, observation_space: gym.spaces.Dict, num_heads: int, 
+                 num_layers: int, hidden_channels: int, braid_or_knot_graph: str, braid_index: int):
         '''
         A feature extractor for braids before inputing the features into an RL algorithm
 
@@ -116,11 +116,12 @@ class ObsBraidFeaturesExtractor(BaseFeaturesExtractor):
         super().__init__(observation_space, features_dim)
         
         self.braid_or_knot_graph = braid_or_knot_graph
+        self.braid_index = braid_index
         self.gnn = GNN(hidden_channels=hidden_channels, num_heads=num_heads, 
                        num_layers=num_layers, dropout=0,
                        classification=False, both=False, ohe_inverses=True, 
                        double_features=True, laplacian=False, k=1, 
-                       return_features=True)
+                       return_features=True, braid_index=braid_index)
 
     def forward(self, observations) -> torch.Tensor:
         if self.braid_or_knot_graph == 'braid' :
@@ -164,14 +165,14 @@ class ObsBraidFeaturesExtractor(BaseFeaturesExtractor):
             edges = [[i,i] for i in range(len(braid_word))]
 
         node_features = get_node_features(braid_word, both=False, pos_neg=False, ohe_inverses=True, 
-                                          laplacian=False, k=1, edges=edges)
+                                          laplacian=False, k=1, edges=edges, braid_index=self.braid_index)
 
         return Data(x=node_features, edge_index=torch.LongTensor(edges).t())
     
     def _create_knot_graph(self, state) : 
         braid_word = self.process_state_to_braid_word(state)
         return braid_word_to_knot_geom_data(braid_word, y=0, both=False, pos_neg=False, ohe_inverses=True, 
-                                            undirected=True, laplacian=False, k=1)
+                                            undirected=True, laplacian=False, k=1, braid_index=self.braid_index)
     
     def process_state_to_braid_word(self, state) : 
         braid_word = state[state != 0]
