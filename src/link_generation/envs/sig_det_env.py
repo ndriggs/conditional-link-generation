@@ -7,7 +7,7 @@ import numpy as np
 
 class SigDetEnv(gym.Env):
 
-    def __init__(self, state_rep:str, reward_type:str, seed:int, braid_index:int = 7, w1:float = 0.7):
+    def __init__(self, state_rep:str, reward_type:str, seed:int, max_braid_length: int, braid_index:int = 7, w1:float = 0.7):
         '''
         params:
         reward_type: either 'dense' which will give the agent a reward everytime the signature
@@ -28,7 +28,7 @@ class SigDetEnv(gym.Env):
         np.random.seed(seed)
         self.braid_index = braid_index 
         self.B = BraidGroup(self.braid_index)
-        self.max_braid_length = 60 # somewhat arbitrary, still computes signature for longer braids
+        self.max_braid_length = max_braid_length # somewhat arbitrary, computes signature for braids as long as 80
         self.state_rep = state_rep
         self.reward_type = reward_type
         self.num_envs = 1 # so StableBaselines3 can use VecEnv  
@@ -87,6 +87,11 @@ class SigDetEnv(gym.Env):
                 reward = 0
             elif self.reward_type == 'sparse' :
                 reward = self.w1*np.abs(self.current_signature) - (1-self.w1)*np.log1p(self.current_det)
+
+            info = {
+                'signature': self.current_signature,
+                'determinant': self.current_det
+            }
         
         else : 
             if self.action_space.contains(action) :
@@ -113,12 +118,14 @@ class SigDetEnv(gym.Env):
             self.t_minus_1_signature = self.current_signature
             self.t_minus_1_det = self.current_det
 
+            info = {}
+
         if self.state_rep == 'braid' :
             state = self.braid_word_to_braid_state()
         elif self.state_rep == 'ohe' :
             state = self.braid_word_to_ohe_state()
 
-        return state, reward, terminated, truncated, {}
+        return state, reward, terminated, truncated, info
 
     def render(self):
         self.link.plot()
