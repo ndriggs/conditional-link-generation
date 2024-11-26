@@ -98,7 +98,7 @@ def braid_word_to_circular_geom_data(braid_word, y, both: bool, ohe_inverses: bo
     return Data(x=node_features, edge_index=torch.LongTensor(edges).t(), y=torch.tensor(y))
 
 def braid_word_to_knot_geom_data(braid_word, y, both: bool, pos_neg: bool, ohe_inverses: bool, undirected: bool,
-                                 laplacian: bool, k: int) :
+                                 laplacian: bool, k: int, braid_index: int = 7) :
     '''
     Converts a braid word (as a list of integers) to a torch_geometric.data.Data object
     containing node features and adjacency list information. Each crossing has a directed edge to 
@@ -150,14 +150,14 @@ def braid_word_to_knot_geom_data(braid_word, y, both: bool, pos_neg: bool, ohe_i
         edges.append([i, i])
 
     node_features = get_node_features(braid_word, both=both, pos_neg=pos_neg, ohe_inverses=ohe_inverses,
-                                      laplacian=laplacian, k=k, edges=edges)
+                                      laplacian=laplacian, k=k, edges=edges, braid_index=braid_index)
 
     return Data(x=node_features, edge_index=torch.LongTensor(edges).t(), y=torch.tensor(y))
 
 
 
 def get_node_features(braid_word, both: bool, pos_neg: bool, ohe_inverses: bool, laplacian: bool,
-                      k:int=0, edges=None) : 
+                      k:int=0, edges=None, braid_index=7) : 
     '''
     braid_word: braid word as a list of integers
     both: whether or not to include both positive/negative crossing info and generator ohe-ing
@@ -175,27 +175,27 @@ def get_node_features(braid_word, both: bool, pos_neg: bool, ohe_inverses: bool,
         node_features = get_laplacian_positional_ecoding(edges, k, len(braid_word))
     elif both : 
         if ohe_inverses :
-            node_features = torch.zeros((len(braid_word),(BRAID_INDEX-1)*2 + 2 + k))
+            node_features = torch.zeros((len(braid_word),(braid_index-1)*2 + 2 + k))
             node_features[:,:k] = get_laplacian_positional_ecoding(edges, k, len(braid_word))
-            node_features[:,k:-2] = get_ohe_inverses_node_features(braid_word)
+            node_features[:,k:-2] = get_ohe_inverses_node_features(braid_word, braid_index=braid_index)
             node_features[:,-2:] = get_pos_neg_node_features(braid_word)
         else : 
-            node_features = torch.zeros((len(braid_word),BRAID_INDEX+1+k))
+            node_features = torch.zeros((len(braid_word),braid_index+1+k))
             node_features[:,:k] = get_laplacian_positional_ecoding(edges, k, len(braid_word))
-            node_features[:,k:-2] = get_not_ohe_inverses_node_features(braid_word)
+            node_features[:,k:-2] = get_not_ohe_inverses_node_features(braid_word, braid_index=braid_index)
             node_features[:,-2:] = get_pos_neg_node_features(braid_word)
     elif pos_neg : # only encode if the crossing is a positive or negative crossing
         node_features = torch.zeros((len(braid_word), 2+k))
         node_features[:,:k] = get_laplacian_positional_ecoding(edges, k, len(braid_word))
         node_features[:,k:] = get_pos_neg_node_features(braid_word)
     elif ohe_inverses :
-        node_features = torch.zeros((len(braid_word),(BRAID_INDEX-1)*2 + k))
+        node_features = torch.zeros((len(braid_word),(braid_index-1)*2 + k))
         node_features[:,:k] = get_laplacian_positional_ecoding(edges, k, len(braid_word))
-        node_features[:,k:] = get_ohe_inverses_node_features(braid_word)
+        node_features[:,k:] = get_ohe_inverses_node_features(braid_word, braid_index=braid_index)
     else : 
-        node_features = torch.zeros((len(braid_word),BRAID_INDEX-1+k))
+        node_features = torch.zeros((len(braid_word),braid_index-1+k))
         node_features[:,:k] = get_laplacian_positional_ecoding(edges, k, len(braid_word))
-        node_features[:,k:] = get_not_ohe_inverses_node_features(braid_word)
+        node_features[:,k:] = get_not_ohe_inverses_node_features(braid_word, braid_index=braid_index)
     return node_features
 
 def get_laplacian_positional_ecoding(edges, k, num_nodes) :
@@ -224,18 +224,18 @@ def get_pos_neg_node_features(braid_word) :
     node_features[:,1] = (torch.sign(braid_word) < 0).to(torch.float32)
     return node_features
 
-def get_ohe_inverses_node_features(braid_word) :
+def get_ohe_inverses_node_features(braid_word, braid_index=7) :
     '''One hot encodes all sigmas and their inverses as distinct generators'''
     # move the negative sigmas to the spots after the positive ones
     # convert -1 to 7, -2 to 8, -3 to 9, etc. 
-    braid_word = torch.abs(braid_word) + (1-torch.sign(braid_word))*((BRAID_INDEX-1)/2)
-    node_features = torch.zeros((len(braid_word),(BRAID_INDEX-1)*2))
+    braid_word = torch.abs(braid_word) + (1-torch.sign(braid_word))*((braid_index-1)/2)
+    node_features = torch.zeros((len(braid_word),(braid_index-1)*2))
     node_features[torch.arange(len(braid_word)),braid_word.to(torch.int64)-1] = 1.0
     return node_features
 
-def get_not_ohe_inverses_node_features(braid_word) :
+def get_not_ohe_inverses_node_features(braid_word, braid_index=7) :
     '''Encodes each inverse as negative the one hot encoding of its corresponding positive generator'''
-    node_features = torch.zeros((len(braid_word),BRAID_INDEX-1))
+    node_features = torch.zeros((len(braid_word),braid_index-1))
     node_features[torch.arange(len(braid_word)),torch.abs(braid_word)-1] = torch.sign(braid_word).to(torch.float32)
     return node_features 
 
