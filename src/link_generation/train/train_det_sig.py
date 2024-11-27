@@ -54,6 +54,7 @@ def main() :
                                        'reward_type': args.reward_type,
                                        'braid_index': args.braid_index,
                                        'max_braid_length': args.max_braid_length,
+                                       'w1': args.w1,
                                        'seed': args.seed})
     
     if args.state_rep == 'braid' : 
@@ -76,7 +77,8 @@ def main() :
         )
         model = PPO("MlpPolicy", vec_env, n_steps=256, verbose=1, 
                     tensorboard_log='src/link_generation/train/logs/')
-    model.learn(90000, callback=LogSigAndLogDet(), tb_log_name=get_exp_name(args))
+    training_steps = 21000 if args.reward_type == 'dense' else 120000
+    model.learn(training_steps, callback=LogSigAndLogDet(), tb_log_name=get_exp_name(args))
     model.save('src/link_generation/train/models/'+get_exp_name(args))
 
 if __name__ == '__main__' :
