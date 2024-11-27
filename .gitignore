@@ -9,3 +9,4 @@ __pycache__/
 *.egg-info
 logs/*
 src/link_generation/train/logs/*
+src/link_generation/train/models/*
