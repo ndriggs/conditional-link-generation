@@ -1,21 +1,137 @@
+import sklearn
 from link_generation.models.curiousity_models import GNN
 from link_generation.potholders.utils import *
 import torch.nn as nn
 import torch
 import lightning as pl
+from torch.optim.lr_scheduler import ExponentialLR
+import sklearn
 
 class VAE(pl.LightningModule) :
-    def __init__(self, num_gnn_layers=5, latent_embedding_size=2, mlp_hidden_size=500, potholder_size=9) :
+    def __init__(self, log_det_scaler: sklearn.preprocessing._data.StandardScaler, 
+                 sig_scaler: sklearn.preprocessing._data.MinMaxScaler, num_gnn_layers=5, 
+                 num_heads=8, latent_embedding_size=2, mlp_hidden_size=400, potholder_size=9) :
 
-        self.encoder = GNN(num_layers=num_gnn_layers)
-        self.mu_transform = nn.Linear(2**(num_gnn_layers-1), latent_embedding_size)
-        self.logvar_transform = nn.Linear(2**(num_gnn_layers-1), latent_embedding_size)
+        self.encoder = GNN(hidden_channels=32, num_heads=num_heads, 
+                           num_layers=num_gnn_layers, dropout=0,
+                           classification=False, both=False, ohe_inverses=True, 
+                           double_features=True, laplacian=False, k=1, 
+                           return_features=True, braid_index=7)
+        self.mu_transform = nn.Linear(2**(num_gnn_layers-1)*num_heads, latent_embedding_size)
+        self.logvar_transform = nn.Linear(2**(num_gnn_layers-1)*num_heads, latent_embedding_size)
 
         self.decoder = nn.Sequential(
             nn.Linear(latent_embedding_size, mlp_hidden_size),
             nn.ReLU(),
             nn.Linear(mlp_hidden_size, mlp_hidden_size),
             nn.ReLU(),
-            nn.Linear(mlp_hidden_size, potholder_size**2),
+            nn.Linear(mlp_hidden_size, potholder_size**2 - 2),
             nn.Sigmoid()
         )
+
+        self.mse_loss = nn.MSELoss()
+        self.log_det_scaler = log_det_scaler
+        self.sig_scaler = sig_scaler
+
+    def forward(self, x) :
+        # encode 
+        x = self.encoder(x)
+        mu = self.mu_transform(x)
+        logvar = self.logvar_transform(x)
+
+        # reparameterize
+        z = self.reparameterize(mu, logvar)
+
+        # decode 
+        x_hat = self.decoder(z)
+
+        # round to nearest knot using the straight-through gradient estimator
+        # since round has zero gradient everywhere
+        knot = x_hat + (x_hat.round() - x_hat).detach()
+
+        # make sure they all got correctly rounded
+        assert torch.all(((knot == torch.ones_like(knot)) + (knot == torch.zeros_like(knot))))
+
+        # calculate Goeritz matrix and invariants
+        P = state_to_potholder_pytorch(knot)
+        G = potholder_to_goeritz_pytorch(P)
+        invariants = goeritz_to_invariants(G)
+
+        return z, mu, logvar, invariants
+
+    def reparameterize(self, mu, logvar):
+        std = torch.exp(0.5*logvar)
+        eps = torch.randn_like(std)
+        return mu + eps*std
+    
+    def compute_mse_loss(self, invariants, batch) :
+        sig, log_det = invariants
+        scaled_sig = self.sig_scaler.transform(sig)
+        scaled_log_det = self.log_det_scaler.transform(log_det)
+        y_hat = torch.cat([scaled_sig, scaled_log_det], dim=1)
+        return self.mse_loss(y_hat, batch.y)
+
+    def training_step(self, batch, batch_idx):
+        z, mu, logvar, invariants = self(batch)
+        
+        # compute the MSE loss
+        mse_loss = self.compute_mse_loss(invariants, batch)
+
+        # compute the KL divergence loss
+        kld_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+
+        # combine the losses
+        loss = mse_loss + kld_loss
+
+        # log and return
+        self.log('train_loss', loss)
+
+        return loss
+
+    def validation_step(self, batch, batch_idx):
+        z, mu, logvar, invariants = self(batch)
+        
+        # compute the MSE loss
+        mse_loss = self.compute_mse_loss(invariants, batch)
+
+        # compute the KL divergence loss
+        kld_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+
+        # combine the losses
+        loss = mse_loss + kld_loss
+
+        # log and return
+        self.log('val_loss', loss)
+        
+        return loss
+
+    def test_step(self, batch, batch_idx):
+        z, mu, logvar, invariants = self(batch)
+        
+        # compute the MSE loss
+        mse_loss = self.compute_mse_loss(invariants, batch)
+
+        # compute the KL divergence loss
+        kld_loss = -0.5 * torch.sum(1 + logvar - mu.pow(2) - logvar.exp())
+
+        # combine the losses
+        loss = mse_loss + kld_loss
+
+        # log and return
+        self.log('test_loss', loss)
+        
+        return loss
+
+    def configure_optimizers(self):
+        optimizer = torch.optim.Adam(self.parameters(), lr=.001)
+        scheduler = ExponentialLR(optimizer, gamma=0.95)
+        
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "interval": "epoch",
+                "frequency": 1,
+                "name": "exp_lr"
+            }
+        }
