@@ -124,6 +124,13 @@ def potholder_to_goeritz_pytorch(P) :
     G = G_tilda[:,1:,1:]
     return G
 
+def goeritz_to_invariants(G) :
+    eigvals = torch.linalg.eigvals(G)
+    eigvals_sign = eigvals.real + (torch.sign(eigvals.real) - eigvals.real).detach()
+    signature = torch.sum(eigvals_sign, dim=1)
+    log_det = torch.log(torch.abs(torch.det(G)))
+    return signature, log_det
+
 def state_to_goeritz_numpy(s) :
     P = state_to_potholder_numpy(s)
 
