@@ -93,7 +93,6 @@ def get_zero_boardering_potholder_corners(region_index_i, region_index_j, k) :
 
 def potholder_to_goeritz_pytorch(P) :
     batch_size = P.shape[0]
-    # P = self.state_to_potholder(s)
     n = P.shape[1] # P is n x n, n is odd
     checkerboard = create_checkerboard(n-1) # checkerboard is k x k, k is even
     m = int(((n-1)**2)/2 + 1)
@@ -112,14 +111,14 @@ def potholder_to_goeritz_pytorch(P) :
                     else :
                         G_tilda[:,i,j] += 1 - 2*P[:,potholder_i,potholder_j]
                 G_tilda[:,j,i] = G_tilda[:,i,j]
-        else :
-            j_checkerboard_index = find_value_indices(checkerboard, j)
-            potholder_i = np.max([i_checkerboard_index[0], j_checkerboard_index[0]])
-            potholder_j = np.max([i_checkerboard_index[1], j_checkerboard_index[1]])
-            if (potholder_i + potholder_j) % 2 == 0 :
-                G_tilda[:,i,j] = -1 + 2*P[:,potholder_i,potholder_j]
             else :
-                G_tilda[:,i,j] = 1 - 2*P[:,potholder_i,potholder_j]
+                j_checkerboard_index = find_value_indices(checkerboard, j)
+                potholder_i = np.max([i_checkerboard_index[0], j_checkerboard_index[0]])
+                potholder_j = np.max([i_checkerboard_index[1], j_checkerboard_index[1]])
+                if (potholder_i + potholder_j) % 2 == 0 :
+                    G_tilda[:,i,j] = -1 + 2*P[:,potholder_i,potholder_j]
+                else :
+                    G_tilda[:,i,j] = 1 - 2*P[:,potholder_i,potholder_j]
     G_tilda[:,range(G_tilda.shape[1]), range(G_tilda.shape[2])] = -torch.sum(G_tilda, axis=1)
     G = G_tilda[:,1:,1:]
     return G
@@ -190,6 +189,7 @@ def get_ij_map(n) :
                 if idx > n-1 :
                     idx -= 1
                 ij_map[(i,j)] = idx
+    return ij_map
 
 def get_potholder_graph_edges(n) :
     # n: the side length of the potholder matrix (should be odd)
