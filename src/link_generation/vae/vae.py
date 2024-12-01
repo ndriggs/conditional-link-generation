@@ -5,20 +5,20 @@ import torch.nn as nn
 import torch
 import lightning as pl
 from torch.optim.lr_scheduler import ExponentialLR
-import sklearn
 
 class VAE(pl.LightningModule) :
-    def __init__(self, log_det_scaler: sklearn.preprocessing._data.StandardScaler, 
-                 sig_scaler: sklearn.preprocessing._data.MinMaxScaler, num_gnn_layers=5, 
-                 num_heads=8, latent_embedding_size=2, mlp_hidden_size=400, potholder_size=9) :
+    def __init__(self, log_det_mean: float, log_det_std: float, sig_min: float,
+                 sig_max: float, num_gnn_layers=5, hidden_channels=32, num_heads=8, 
+                 latent_embedding_size=2, mlp_hidden_size=400, potholder_size=9) :
+        super(VAE, self).__init__()
 
-        self.encoder = GNN(hidden_channels=32, num_heads=num_heads, 
+        self.encoder = GNN(hidden_channels=hidden_channels, num_heads=num_heads, 
                            num_layers=num_gnn_layers, dropout=0,
                            classification=False, both=False, ohe_inverses=True, 
                            double_features=True, laplacian=False, k=1, 
                            return_features=True, braid_index=7)
-        self.mu_transform = nn.Linear(2**(num_gnn_layers-1)*num_heads, latent_embedding_size)
-        self.logvar_transform = nn.Linear(2**(num_gnn_layers-1)*num_heads, latent_embedding_size)
+        self.mu_transform = nn.Linear(hidden_channels*(2**(num_gnn_layers-1))*num_heads, latent_embedding_size)
+        self.logvar_transform = nn.Linear(hidden_channels*(2**(num_gnn_layers-1))*num_heads, latent_embedding_size)
 
         self.decoder = nn.Sequential(
             nn.Linear(latent_embedding_size, mlp_hidden_size),
@@ -30,8 +30,10 @@ class VAE(pl.LightningModule) :
         )
 
         self.mse_loss = nn.MSELoss()
-        self.log_det_scaler = log_det_scaler
-        self.sig_scaler = sig_scaler
+        self.log_det_mean = log_det_mean
+        self.log_det_std = log_det_std
+        self.sig_min = sig_min
+        self.sig_max = sig_max
 
     def forward(self, x) :
         # encode 
@@ -66,10 +68,10 @@ class VAE(pl.LightningModule) :
     
     def compute_mse_loss(self, invariants, batch) :
         sig, log_det = invariants
-        scaled_sig = self.sig_scaler.transform(sig)
-        scaled_log_det = self.log_det_scaler.transform(log_det)
-        y_hat = torch.cat([scaled_sig, scaled_log_det], dim=1)
-        return self.mse_loss(y_hat, batch.y)
+        scaled_sig = (sig - self.sig_min) / (self.sig_max - self.sig_min)
+        scaled_log_det = (log_det - self.log_det_mean) / self.log_det_std
+        y_hat = torch.cat([scaled_sig.unsqueeze(1), scaled_log_det.unsqueeze(1)], dim=1)
+        return self.mse_loss(y_hat, batch.y.squeeze(2))
 
     def training_step(self, batch, batch_idx):
         z, mu, logvar, invariants = self(batch)
