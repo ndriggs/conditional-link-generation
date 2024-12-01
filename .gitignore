@@ -10,3 +10,4 @@ __pycache__/
 logs/*
 src/link_generation/train/logs/*
 src/link_generation/train/models/*
+src/link_generation/vae/logs/*
