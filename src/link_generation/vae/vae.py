@@ -66,6 +66,24 @@ class VAE(pl.LightningModule) :
         eps = torch.randn_like(std)
         return mu + eps*std
     
+    def latent_to_invariants(self, z) :
+        # decode 
+        x_hat = self.decoder(z)
+
+        # round to nearest knot using the straight-through gradient estimator
+        # since round has zero gradient everywhere
+        knot = x_hat + (x_hat.round() - x_hat).detach()
+
+        # make sure they all got correctly rounded
+        assert torch.all(((knot == torch.ones_like(knot)) + (knot == torch.zeros_like(knot))))
+
+        # calculate Goeritz matrix and invariants
+        P = state_to_potholder_pytorch(knot)
+        G = potholder_to_goeritz_pytorch(P)
+        invariants = goeritz_to_invariants(G)
+
+        return invariants
+    
     def compute_mse_loss(self, invariants, batch) :
         sig, log_det = invariants
         scaled_sig = (sig - self.sig_min) / (self.sig_max - self.sig_min)
@@ -86,6 +104,8 @@ class VAE(pl.LightningModule) :
         loss = mse_loss + kld_loss
 
         # log and return
+        self.log('train_mse_loss', mse_loss)
+        self.log('train_kld_loss', kld_loss)
         self.log('train_loss', loss)
 
         return loss
@@ -103,6 +123,8 @@ class VAE(pl.LightningModule) :
         loss = mse_loss + kld_loss
 
         # log and return
+        self.log('val_mse_loss', mse_loss)
+        self.log('val_kld_loss', kld_loss)
         self.log('val_loss', loss)
         
         return loss
@@ -120,6 +142,8 @@ class VAE(pl.LightningModule) :
         loss = mse_loss + kld_loss
 
         # log and return
+        self.log('test_mse_loss', mse_loss)
+        self.log('test_kld_loss', kld_loss)
         self.log('test_loss', loss)
         
         return loss
