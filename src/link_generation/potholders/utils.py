@@ -9,7 +9,7 @@ def state_to_potholder_pytorch(s) :
         raise ValueError('State must be of size n^2 - 2 where n is odd')
     n = int(n)
     P_flat = torch.zeros((s.shape[0], n**2), dtype=torch.float32)
-    P_flat = P_flat.to('cuda')
+    P_flat = P_flat.to(s.device)
     indexes = [i for i in range(n**2) if i not in [n-1, n**2-n]]
     P_flat[:,indexes] = s
     P = P_flat.view(s.shape[0],n,n)
@@ -97,7 +97,7 @@ def potholder_to_goeritz_pytorch(P) :
     checkerboard = create_checkerboard(n-1) # checkerboard is k x k, k is even
     m = int(((n-1)**2)/2 + 1)
     G_tilda = torch.zeros((batch_size, m, m), dtype=torch.float32) # pre-Goeritz matrix is m x m, m is odd
-    G_tilda = G_tilda.to('cuda')
+    G_tilda = G_tilda.to(P.device)
     for i in range(1,m) : # for each region i
         i_neighbors = get_neighbors(i, checkerboard)
         i_checkerboard_index = find_value_indices(checkerboard, i)
