@@ -14,6 +14,9 @@ def load_braid_words(train_test_or_val: str):
     if os.getcwd() == '/home/nattd/repos/link-generation/src/link_generation/predicting_signature' :
         with open(f'{train_test_or_val}_braids.txt', 'r') as f :
             braid_words = json.load(f)
+    elif os.getcwd() == '/home/nattd/repos/link-generation/src/link_generation/vae' :
+        with open(f'../predicting_signature/{train_test_or_val}_braids.txt', 'r') as f :
+            braid_words = json.load(f)
     else :
         with open(f'src/link_generation/predicting_signature/{train_test_or_val}_braids.txt', 'r') as f :
             braid_words = json.load(f)

@@ -2,10 +2,14 @@ from sage.all import BraidGroup, Link, Integer
 from link_generation.predicting_signature.utils import load_braid_words
 import numpy as np
 
-def get_knot_braids_sig_and_det(train_val_or_test: str) :
+def get_knot_braids_sig_and_det(train_val_or_test: str, ipynb: bool = False) :
     # load the invariants
-    sig = np.load(f'src/link_generation/predicting_signature/y_{train_val_or_test}.npy')
-    det = np.load(f'src/link_generation/predicting_signature/det_{train_val_or_test}.npy')
+    if ipynb : 
+        sig = np.load(f'../predicting_signature/y_{train_val_or_test}.npy')
+        det = np.load(f'../predicting_signature/det_{train_val_or_test}.npy')
+    else : 
+        sig = np.load(f'src/link_generation/predicting_signature/y_{train_val_or_test}.npy')
+        det = np.load(f'src/link_generation/predicting_signature/det_{train_val_or_test}.npy')
 
     # load the braid words
     braids = load_braid_words(train_val_or_test)
