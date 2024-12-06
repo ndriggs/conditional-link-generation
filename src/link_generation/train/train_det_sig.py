@@ -37,10 +37,12 @@ class LogSigAndLogDet(BaseCallback):
         for info in self.locals['infos'] :
             signature = info.get('signature', None)
             determinant = info.get('determinant', None)
+            is_knot = info.get('is_knot', None)
             if (signature is not None) and (determinant is not None):
                 # Log all variables to TensorBoard
                 self.logger.record("abs_signature", np.abs(signature))
                 self.logger.record("log_determinant", np.log1p(determinant))
+                self.logger.record("is_knot", is_knot)
                 self.sigs.append(np.abs(signature))
                 self.log_dets.append(np.log1p(determinant))
         
@@ -77,7 +79,7 @@ def main() :
         )
         model = PPO("MlpPolicy", vec_env, n_steps=256, verbose=1, 
                     tensorboard_log='src/link_generation/train/logs/')
-    training_steps = 21000 if args.reward_type == 'dense' else 120000
+    training_steps = 30000 if args.reward_type == 'dense' else 150000
     model.learn(training_steps, callback=LogSigAndLogDet(), tb_log_name=get_exp_name(args))
     model.save('src/link_generation/train/models/'+get_exp_name(args))
 
