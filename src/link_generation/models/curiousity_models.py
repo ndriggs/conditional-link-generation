@@ -500,11 +500,13 @@ class GNN(pl.LightningModule):
     def __init__(self, hidden_channels=16, num_heads=4, num_layers=5, dropout=0,
                  classification=False, both=True, pos_neg=False, ohe_inverses=True, 
                  laplacian=False, k=0, double_features=True, return_features=False, 
-                 num_classes=75, braid_index=7):
+                 num_classes=75, braid_index=7, potholder_size=0):
         super(GNN, self).__init__()
         self.return_features = return_features
 
-        if laplacian :
+        if potholder_size > 0 :
+            num_node_features = 2*potholder_size + 2 + k
+        elif laplacian :
             num_node_features = k
         elif both and ohe_inverses :
             num_node_features = (braid_index-1)*2 + 2 + k
