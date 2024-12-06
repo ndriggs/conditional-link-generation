@@ -7,16 +7,21 @@ import lightning as pl
 from torch.optim.lr_scheduler import ExponentialLR
 
 class VAE(pl.LightningModule) :
-    def __init__(self, log_det_mean: float, log_det_std: float, sig_min: float,
-                 sig_max: float, num_gnn_layers=5, hidden_channels=32, num_heads=8, 
-                 latent_embedding_size=2, mlp_hidden_size=400, potholder_size=9) :
+    def __init__(self, mean, scale, 
+                 num_gnn_layers=5, hidden_channels=32, num_heads=8, 
+                 latent_embedding_size=2, mlp_hidden_size=400, potholder_size=9,
+                 k=2) :
         super(VAE, self).__init__()
 
+        # when training on braids
+        # self.encoder = GNN(hidden_channels=hidden_channels, num_heads=num_heads, 
+        #                    num_layers=num_gnn_layers, dropout=0,
+        #                    classification=False, both=False, ohe_inverses=True, 
+        #                    double_features=True, laplacian=False, k=1, 
+        #                    return_features=True, braid_index=7)
         self.encoder = GNN(hidden_channels=hidden_channels, num_heads=num_heads, 
-                           num_layers=num_gnn_layers, dropout=0,
-                           classification=False, both=False, ohe_inverses=True, 
-                           double_features=True, laplacian=False, k=1, 
-                           return_features=True, braid_index=7)
+                           num_layers=num_gnn_layers, double_features=True, k=k, 
+                           return_features=True, potholder_size=potholder_size)
         self.mu_transform = nn.Linear(hidden_channels*(2**(num_gnn_layers-1))*num_heads, latent_embedding_size)
         self.logvar_transform = nn.Linear(hidden_channels*(2**(num_gnn_layers-1))*num_heads, latent_embedding_size)
 
@@ -30,10 +35,9 @@ class VAE(pl.LightningModule) :
         )
 
         self.mse_loss = nn.MSELoss()
-        self.log_det_mean = log_det_mean
-        self.log_det_std = log_det_std
-        self.sig_min = sig_min
-        self.sig_max = sig_max
+        self.l1_loss = nn.L1Loss()
+        self.mean = torch.tensor(mean).to('cuda')
+        self.scale = torch.tensor(scale).to('cuda')
 
     def forward(self, x) :
         # encode 
@@ -86,10 +90,14 @@ class VAE(pl.LightningModule) :
     
     def compute_mse_loss(self, invariants, batch) :
         sig, log_det = invariants
-        scaled_sig = (sig - self.sig_min) / (self.sig_max - self.sig_min)
-        scaled_log_det = (log_det - self.log_det_mean) / self.log_det_std
-        y_hat = torch.cat([scaled_sig.unsqueeze(1), scaled_log_det.unsqueeze(1)], dim=1)
-        return self.mse_loss(y_hat, batch.y.squeeze(2))
+        y_hat = torch.cat([sig.unsqueeze(1), log_det.unsqueeze(1)], dim=1)
+        y_hat_scaled = (y_hat - self.mean) / self.scale
+        return self.mse_loss(y_hat_scaled, batch.y)
+    
+    def compute_invariant_l1_loss(self, invariants, batch) :
+        sig, log_det = invariants
+        unscaled_y = batch.y*self.scale + self.mean
+        return self.l1_loss(sig, unscaled_y[:,0]), self.l1_loss(log_det, unscaled_y[:,1])
 
     def training_step(self, batch, batch_idx):
         z, mu, logvar, invariants = self(batch)
@@ -103,7 +111,12 @@ class VAE(pl.LightningModule) :
         # combine the losses
         loss = mse_loss + kld_loss
 
+        # compute the unscaled l1 losses
+        sig_loss, log_det_loss = self.compute_invariant_l1_loss(invariants, batch)
+
         # log and return
+        self.log('train_sig_loss', sig_loss)
+        self.log('train_logdet_loss', log_det_loss)
         self.log('train_mse_loss', mse_loss)
         self.log('train_kld_loss', kld_loss)
         self.log('train_loss', loss)
@@ -122,7 +135,12 @@ class VAE(pl.LightningModule) :
         # combine the losses
         loss = mse_loss + kld_loss
 
+        # compute the unscaled l1 losses
+        sig_loss, log_det_loss = self.compute_invariant_l1_loss(invariants, batch)
+
         # log and return
+        self.log('val_sig_loss', sig_loss)
+        self.log('val_logdet_loss', log_det_loss)
         self.log('val_mse_loss', mse_loss)
         self.log('val_kld_loss', kld_loss)
         self.log('val_loss', loss)
