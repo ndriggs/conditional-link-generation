@@ -1,5 +1,7 @@
 import torch
 import numpy as np
+from torch_geometric.data import Data
+from torch_geometric.loader import DataLoader
 
 def state_to_potholder_pytorch(s) :
     # converts from a flattened state of length n^2 - 2 to an n by n
@@ -267,37 +269,54 @@ def get_potholder_graph_edges(n) :
 
     return torch.LongTensor(undirected_edges).t()
 
+def get_potholder_graph_data_loader(state, signatures, n, k, batch_size, shuffle) :
+    '''
+    state: torch.tensor size (num_potholders, n**2 - 2) all entries 0 or 1
+    signatures: torch.tensor size (num_potholders,) signature of the corresponding potholders
+    k: int, number of eigenvectors to include
+    n: int potholder size, odd number >= 3
+    batch_size: int batch size for data laoder
+    shuffle: bool whether or not to shuffle the dataloader
 
-# here's a simple example
-from torch_geometric.data import Data
-from torch_geometric.loader import DataLoader
+    returns: pytorch_geometric graph dataloader
+    '''
+    edges = get_potholder_graph_edges(n)
 
-n = 9
-random_potholder = np.random.randint(2, size=n**2 - 2) # 9 x 9 potholder (minus the 2 Riedimiester I moves)
-sig = state_to_signature(random_potholder)
-edges = get_potholder_graph_edges(n)
+    # create the node features 
+    potholder = state_to_potholder_pytorch(state)
+    node_features = torch.zeros((len(state), n**2 - 2, 2*n+2+k)) # dim [potholder_num, node_num, node_feat_num]
+    ij_map = get_ij_map(n)
+    for i in range(n) :
+        for j in range(n) :
+            # skip the top right and bottom left corners
+            if (i == 0) and (j == n-1) :
+                continue
+            if (i == n-1) and (j == 0) :
+                continue
+            
+            # one-hot encode positive/negative crossing information + row and col
+            if (i+j) % 2 == 0 :
+                node_features[:,ij_map[(i,j)],0] = potholder[:,i,j]
+                node_features[:,ij_map[(i,j)],1] = 1-potholder[:,i,j]
+            else :
+                node_features[:,ij_map[(i,j)],0] = 1-potholder[:,i,j]
+                node_features[:,ij_map[(i,j)],1] = potholder[:,i,j]
+            node_features[:,ij_map[(i,j)],i+2] = 1.0
+            node_features[:,ij_map[(i,j)],j+n+2] = 1.0
 
-# create the node features 
-potholder = state_to_potholder_numpy(random_potholder)
-node_features = []
-for i in range(n) :
-    for j in range(n) :
-        # skip the top right and bottom left corners
-        if (i == 0) and (j == n-1) :
-            continue
-        if (i == n-1) and (j == 0) :
-            continue
-        
-        # one-hot encode positive/negative crossing information
-        if (i+j) % 2 == 0 :
-            node_features.append([potholder[i,j], 1-potholder[i,j]])
-        else :
-            node_features.append([1-potholder[i,j], potholder[i,j]])
-node_features = torch.tensor(node_features)
+    A = np.zeros((n**2 - 2, n**2 - 2))
+    for edge in edges :
+        A[edge[1], edge[0]] = 1
+    D = np.diag(np.sum(A, axis=1))
+    L = D - A
+    eigvals, eigvecs = np.linalg.eig(L)
+    node_features[:,:,-k:] = torch.tensor(eigvecs[:,eigvals.argsort()[::-1][:k]])
 
-# create pytorch_geometric.data.Data object
-data = Data(x=node_features, edge_index=edges, y=torch.tensor(sig))
+    # create pytorch_geometric.data.Data object list
+    data_list = [
+        Data(x=node_feat, edge_index=edges, y=sig) \
+            for node_feat, sig in zip(node_features, signatures)
+    ]
 
-# create a pytorch_geometric.loader.DataLoader object
-data_list = [data]
-dataloader = DataLoader(data_list, batch_size=32, shuffle=True)
+    # create a pytorch_geometric.loader.DataLoader object
+    return DataLoader(data_list, batch_size=batch_size, shuffle=shuffle)
