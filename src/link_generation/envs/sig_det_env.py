@@ -86,11 +86,16 @@ class SigDetEnv(gym.Env):
             if self.reward_type == 'dense' :
                 reward = 0
             elif self.reward_type == 'sparse' :
-                reward = self.w1*np.abs(self.current_signature) - (1-self.w1)*np.log1p(self.current_det)
+                if self.link.is_knot() :
+                    reward = self.w1*np.abs(self.current_signature) - (1-self.w1)*np.log1p(self.current_det)
+                else : 
+                    reward = -1
 
             info = {
                 'signature': self.current_signature,
-                'determinant': self.current_det
+                'determinant': self.current_det,
+                'braid_word': self.braid_word,
+                'is_knot': int(self.link.is_knot())
             }
         
         else : 
@@ -105,20 +110,31 @@ class SigDetEnv(gym.Env):
             terminated = False 
             if len(self.braid_word) >= self.max_braid_length :
                 truncated = True
+                info = {
+                    'signature': self.current_signature,
+                    'determinant': self.current_det,
+                    'braid_word': self.braid_word,
+                    'is_knot': int(self.link.is_knot())
+                }
             else :
                 truncated = False
+                info = {}
 
             # calculate the reward
             if self.reward_type == 'dense' :
                 reward = self.w1*(np.abs(self.current_signature) - np.abs(self.t_minus_1_signature)) \
                     + (1-self.w1)*(np.log1p(self.t_minus_1_det) - np.log1p(self.current_det))
             elif self.reward_type == 'sparse' :
-                reward = 0
+                if truncated :
+                    if self.link.is_knot() :
+                        reward = self.w1*np.abs(self.current_signature) - (1-self.w1)*np.log1p(self.current_det)
+                    else : 
+                        reward = -1
+                else : 
+                    reward = int(self.link.is_knot())
 
             self.t_minus_1_signature = self.current_signature
             self.t_minus_1_det = self.current_det
-
-            info = {}
 
         if self.state_rep == 'braid' :
             state = self.braid_word_to_braid_state()
