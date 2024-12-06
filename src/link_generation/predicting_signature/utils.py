@@ -122,7 +122,10 @@ def braid_word_to_knot_geom_data(braid_word, y, both: bool, pos_neg: bool, ohe_i
     undirected: whether or not the graph should be directed or undirected
     '''
     edges = []
-    abs_braid_word = np.abs(braid_word)
+    if isinstance(braid_word, np.ndarray) :
+        abs_braid_word = np.abs(braid_word)
+    elif isinstance(braid_word, torch.Tensor) :
+        abs_braid_word = torch.abs(braid_word)
     for i in range(len(braid_word)) :
         gen = abs_braid_word[i]
         left_out_edge_found = False
