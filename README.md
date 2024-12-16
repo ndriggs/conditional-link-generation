@@ -18,10 +18,10 @@ One technique in reinforcement learning is to use intrinsic rewards (rewards gen
 Extensive experiments were performed to select which architecture should be used for the curiousity network. The models considered are found in [curiousity_models](https://github.com/ndriggs/conditional-link-generation/blob/main/src/link_generation/models/curiousity_models.py). I have still yet to implement curiousity, but the experiments helped me learn a lot about the expressiveness of these different models and discover the power of GNNs. 
 
 ### Monte Carlo Tree Search
-Since we know the transition dynamics, monte carlo tree search seems like a natural approach and is something I hope to try in the future. 
+Since we know the transition dynamics, monte carlo tree search seems like a natural approach and is something I hope to try in the future. [LightZero](https://github.com/opendilab/LightZero) seems like a good tool to try. 
 
 ## Variational Autoencoder (VAE)
-See [link_generation/vae](https://github.com/ndriggs/conditional-link-generation/tree/main/src/link_generation/vae). 
+See [link_generation/vae](https://github.com/ndriggs/conditional-link-generation/tree/main/src/link_generation/vae). I create a VAE for knots represented by potholder diagrams whose reconstruction loss is based on the invariant values of the original knot and reconstructed knot, similar to perceptual loss for VAEs on images. However, our invariant calculation is an exact calculation based on the Goeritz matrix, not using a frozen neural net like in perceptual loss. 
 
 ## Other Potential Approaches
 Simulated annealing, genetic algorithm, discrete bayesian optimization, tree-structured parzen estimator, fine-tuning an LLM with the invariant values of a knot followed by its braid word representation. 
