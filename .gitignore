@@ -5,7 +5,7 @@ __pycache__/
 *.err
 *.pkl
 *.zip
-*.sh
+# *.sh
 *.egg-info
 logs/*
 src/link_generation/train/logs/*
