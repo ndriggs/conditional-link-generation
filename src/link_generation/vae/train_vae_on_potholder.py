@@ -12,6 +12,7 @@ def parse_args():
     parser.add_argument('--potholder_size', type=int)
     parser.add_argument('--k', type=int, default=2)
     parser.add_argument('--accelerator', type=str, default='cuda')
+    parser.add_argument('--latent_dim', type=int, default=2)
     return parser.parse_args()
 
 def main() :
@@ -33,12 +34,13 @@ def main() :
     train_loader = get_potholder_graph_data_loader(X_train, y_train_scaled, args.potholder_size, args.k, 128, True)
     val_loader = get_potholder_graph_data_loader(X_val, y_val_scaled, args.potholder_size, args.k, 128, False)
 
-    model = VAE(mean=scaler.mean_, scale=scaler.scale_, potholder_size=args.potholder_size)
+    model = VAE(mean=scaler.mean_, scale=scaler.scale_, latent_embedding_size=args.latent_dim, 
+                potholder_size=args.potholder_size)
 
     lr_monitor = LearningRateMonitor(logging_interval='epoch')
     checkpoint_callback = ModelCheckpoint(monitor="val_loss")
 
-    experiment_name = f'pot2pot_vae_{args.potholder_size}_k_{args.k}'
+    experiment_name = f'pot2pot_vae_{args.potholder_size}_k_{args.k}_latent_{args.latent_dim}'
 
     trainer = pl.Trainer(
         accelerator=args.accelerator,

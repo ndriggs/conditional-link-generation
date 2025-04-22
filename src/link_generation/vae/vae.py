@@ -10,7 +10,7 @@ class VAE(pl.LightningModule) :
     def __init__(self, mean, scale, 
                  num_gnn_layers=5, hidden_channels=32, num_heads=8, 
                  latent_embedding_size=2, mlp_hidden_size=400, potholder_size=9,
-                 k=2) :
+                 k=2, device='cuda') :
         super(VAE, self).__init__()
 
         # when training on braids
@@ -36,8 +36,8 @@ class VAE(pl.LightningModule) :
 
         self.mse_loss = nn.MSELoss()
         self.l1_loss = nn.L1Loss()
-        self.mean = torch.tensor(mean).to('cuda')
-        self.scale = torch.tensor(scale).to('cuda')
+        self.mean = torch.tensor(mean).to(device)
+        self.scale = torch.tensor(scale).to(device)
 
     def forward(self, x) :
         # encode 

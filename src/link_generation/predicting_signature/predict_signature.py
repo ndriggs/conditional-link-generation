@@ -135,7 +135,7 @@ def main():
                     classification=args.classification)
     elif args.model == 'cnn' :
         model = CNN(kernel_size=args.kernel_size, layer_norm=args.layer_norm,
-                    classification=args.classification)
+                    classification=args.classification, init_hidden_size=args.hidden_size)
     elif args.model == 'transformer_encoder' :
         model = TransformerEncoder(vocab_size=num_generators+1, d_model=args.d_model, 
                                    nhead=args.nheads, num_encoder_layers=args.num_layers, 
@@ -164,7 +164,7 @@ def main():
         callbacks=[lr_monitor, checkpoint_callback],
         # fast_dev_run=2, # for when testing
         enable_checkpointing=True, # so it returns the best model
-        logger=pl.pytorch.loggers.TensorBoardLogger('logs/', name=experiment_name) 
+        logger=pl.pytorch.loggers.TensorBoardLogger(f'logs/{args.model}', name=experiment_name) 
         # max_time = "00:12:00:00",
         # num_nodes = args.num_nodes,
     )

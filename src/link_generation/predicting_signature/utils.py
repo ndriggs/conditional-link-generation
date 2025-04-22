@@ -2,6 +2,7 @@ from torch.utils.data import Dataset
 from torch.nn.utils.rnn import pad_sequence
 from torch_geometric.data import Data
 from torch_geometric.loader import DataLoader
+from torch_geometric.transforms import AddLaplacianEigenvectorPE
 import torch
 import numpy as np
 from typing import Union
@@ -126,6 +127,8 @@ def braid_word_to_knot_geom_data(braid_word, y, both: bool, pos_neg: bool, ohe_i
         abs_braid_word = np.abs(braid_word)
     elif isinstance(braid_word, torch.Tensor) :
         abs_braid_word = torch.abs(braid_word)
+    elif isinstance(braid_word, list) :
+        abs_braid_word = torch.abs(torch.tensor(braid_word))
     for i in range(len(braid_word)) :
         gen = abs_braid_word[i]
         left_out_edge_found = False
@@ -156,14 +159,20 @@ def braid_word_to_knot_geom_data(braid_word, y, both: bool, pos_neg: bool, ohe_i
         edges.append([i, i])
 
     node_features = get_node_features(braid_word, both=both, pos_neg=pos_neg, ohe_inverses=ohe_inverses,
-                                      laplacian=laplacian, k=k, edges=edges, braid_index=braid_index)
+                                      edges=edges, braid_index=braid_index)
 
-    return Data(x=node_features, edge_index=torch.LongTensor(edges).t(), y=torch.tensor(y))
+    data =  Data(x=node_features, edge_index=torch.LongTensor(edges).t(), y=torch.tensor(y))
+    if k == 0 : 
+        return data
+    data = AddLaplacianEigenvectorPE(k=min(k, np.max(edges).item()), attr_name=None, is_undirected=undirected)(data)
+    if k > np.max(edges).item() :
+        data.x = torch.cat([data.x, torch.zeros((data.num_nodes, k-data.num_nodes+1))], dim=1)
+    return data
+    
 
 
 
-def get_node_features(braid_word, both: bool, pos_neg: bool, ohe_inverses: bool, laplacian: bool,
-                      k:int=0, edges=None, braid_index=7) : 
+def get_node_features(braid_word, both: bool, pos_neg: bool, ohe_inverses: bool, edges=None, braid_index=7) : 
     '''
     braid_word: braid word as a list of integers
     both: whether or not to include both positive/negative crossing info and generator ohe-ing
@@ -177,31 +186,22 @@ def get_node_features(braid_word, both: bool, pos_neg: bool, ohe_inverses: bool,
     '''
     if not isinstance(braid_word, torch.Tensor) :
         braid_word = torch.tensor(braid_word)
-    if laplacian :
-        node_features = get_laplacian_positional_ecoding(edges, k, len(braid_word))
-    elif both : 
+    
+    if both : 
         if ohe_inverses :
-            node_features = torch.zeros((len(braid_word),(braid_index-1)*2 + 2 + k))
-            node_features[:,:k] = get_laplacian_positional_ecoding(edges, k, len(braid_word))
-            node_features[:,k:-2] = get_ohe_inverses_node_features(braid_word, braid_index=braid_index)
+            node_features = torch.zeros((len(braid_word),(braid_index-1)*2 + 2))
+            node_features[:,:-2] = get_ohe_inverses_node_features(braid_word, braid_index=braid_index)
             node_features[:,-2:] = get_pos_neg_node_features(braid_word)
         else : 
-            node_features = torch.zeros((len(braid_word),braid_index+1+k))
-            node_features[:,:k] = get_laplacian_positional_ecoding(edges, k, len(braid_word))
-            node_features[:,k:-2] = get_not_ohe_inverses_node_features(braid_word, braid_index=braid_index)
+            node_features = torch.zeros((len(braid_word),braid_index+1))
+            node_features[:,:-2] = get_not_ohe_inverses_node_features(braid_word, braid_index=braid_index)
             node_features[:,-2:] = get_pos_neg_node_features(braid_word)
     elif pos_neg : # only encode if the crossing is a positive or negative crossing
-        node_features = torch.zeros((len(braid_word), 2+k))
-        node_features[:,:k] = get_laplacian_positional_ecoding(edges, k, len(braid_word))
-        node_features[:,k:] = get_pos_neg_node_features(braid_word)
+        node_features = get_pos_neg_node_features(braid_word)
     elif ohe_inverses :
-        node_features = torch.zeros((len(braid_word),(braid_index-1)*2 + k))
-        node_features[:,:k] = get_laplacian_positional_ecoding(edges, k, len(braid_word))
-        node_features[:,k:] = get_ohe_inverses_node_features(braid_word, braid_index=braid_index)
+        node_features = get_ohe_inverses_node_features(braid_word, braid_index=braid_index)
     else : 
-        node_features = torch.zeros((len(braid_word),braid_index-1+k))
-        node_features[:,:k] = get_laplacian_positional_ecoding(edges, k, len(braid_word))
-        node_features[:,k:] = get_not_ohe_inverses_node_features(braid_word, braid_index=braid_index)
+        node_features = get_not_ohe_inverses_node_features(braid_word, braid_index=braid_index)
     return node_features
 
 def get_laplacian_positional_ecoding(edges, k, num_nodes) :
@@ -255,7 +255,7 @@ def get_knot_graph_dataloader(braid_words, targets, both:bool, pos_neg:bool, ohe
         braid_word_to_knot_geom_data(braid_word, y, both, pos_neg, ohe_inverses, undirected, laplacian, k) \
             for braid_word, y in zip(braid_words, targets)
     ]
-    return DataLoader(data_list, batch_size=batch_size, shuffle=shuffle, num_workers=79)
+    return DataLoader(data_list, batch_size=batch_size, shuffle=shuffle, num_workers=1)
 
 
 class BraidDataset(Dataset):
@@ -317,4 +317,4 @@ def get_experiment_name(args) :
         # ohe = 'pos_neg' if args.pos_neg else 'ohe'
         # undir = 'undir' if args.undirected else 'directed'
         # both = 'both' if args.both else 'single'
-        return f'{model}_nheads{args.nheads}_nlayers{args.num_layers}'
+        return f'{model}_nheads{args.nheads}_nlayers{args.num_layers}_k{args.k}'

@@ -156,7 +156,7 @@ class MLP(pl.LightningModule):
 class CNN(pl.LightningModule):
     def __init__(self, kernel_size: int, layer_norm: bool, 
                  lk_matrix_size: int = 21, num_invariants: int = 1,
-                 classification=False, num_classes=75) :
+                 init_hidden_size=2, classification=False, num_classes=75) :
         super(CNN, self).__init__()
 
         self.layer_norm = layer_norm
@@ -170,25 +170,25 @@ class CNN(pl.LightningModule):
         self.relu = nn.ReLU()
 
         padding = int(kernel_size == 3)
-        self.conv1 = nn.Conv2d(in_channels=1, out_channels=16,
+        self.conv1 = nn.Conv2d(in_channels=1, out_channels=init_hidden_size,
                               kernel_size=kernel_size, stride=1,
                               padding=padding)
-        self.conv2 = nn.Conv2d(in_channels=16, out_channels=32,
+        self.conv2 = nn.Conv2d(in_channels=init_hidden_size, out_channels=init_hidden_size*2,
                               kernel_size=kernel_size, stride=1,
                               padding=padding)
-        self.conv3 = nn.Conv2d(in_channels=32, out_channels=64,
+        self.conv3 = nn.Conv2d(in_channels=init_hidden_size*2, out_channels=init_hidden_size*3,
                               kernel_size=kernel_size, stride=1,
                               padding=padding)
 
         if layer_norm :
-          self.norm1 = nn.LayerNorm([16, lk_matrix_size-(3-kernel_size),
+          self.norm1 = nn.LayerNorm([init_hidden_size, lk_matrix_size-(3-kernel_size),
                                     lk_matrix_size-(3-kernel_size)])
-          self.norm2 = nn.LayerNorm([32, lk_matrix_size-2*(3-kernel_size),
+          self.norm2 = nn.LayerNorm([init_hidden_size*2, lk_matrix_size-2*(3-kernel_size),
                                     lk_matrix_size-2*(3-kernel_size)])
-          self.norm3 = nn.LayerNorm([64, lk_matrix_size-3*(3-kernel_size),
+          self.norm3 = nn.LayerNorm([init_hidden_size*3, lk_matrix_size-3*(3-kernel_size),
                                     lk_matrix_size-3*(3-kernel_size)])
 
-        self.fc1 = nn.Linear(64*(lk_matrix_size-3*(3-kernel_size))**2, 1000)
+        self.fc1 = nn.Linear(init_hidden_size*3*(lk_matrix_size-3*(3-kernel_size))**2, 1000)
         if self.classification :
             self.fc2 = nn.Linear(1000, num_classes)
         else : 
